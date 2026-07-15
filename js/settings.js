@@ -1,4 +1,4 @@
-/* コマドリ settings.js — 設定画面(グローバル KD.settings) */
+﻿/* コマドリ settings.js — 設定画面(グローバル KD.settings) */
 window.KD = window.KD || {};
 
 KD.settings = (() => {
@@ -6,7 +6,7 @@ KD.settings = (() => {
   const S = KD.store;
 
   let apiKeyVisible = false;
-  let lmsTokenVisible = false;
+  let lmsUrlVisible = false;
   let lmsStatus = null; // { kind:'ok'|'err', text }
   const expandedPeriods = new Set();
 
@@ -52,7 +52,7 @@ KD.settings = (() => {
   }
 
   function panelLms(st) {
-    const hasToken = !!st.lmsToken;
+    const hasUrl = !!st.lmsIcalUrl;
     const status = lmsStatus
       ? `<p class="set-lms-status is-${lmsStatus.kind}">${U.escapeHtml(lmsStatus.text)}</p>`
       : "";
@@ -60,16 +60,17 @@ KD.settings = (() => {
       <div class="panel set-panel">
         <div class="set-title">LMS連携(課題の自動取り込み)</div>
         <div class="field">
-          <label>アクセストークン</label>
+          <label>カレンダーURL</label>
           <div class="set-apikey-row">
-            <input type="${lmsTokenVisible ? "text" : "password"}" id="set-lms-token"
-              value="${U.escapeHtml(st.lmsToken || "")}" placeholder="LMSのセキュリティキー">
-            <button class="btn btn-ghost btn-sm" id="set-lms-toggle" type="button">${lmsTokenVisible ? "隠す" : "表示"}</button>
+            <input type="${lmsUrlVisible ? "text" : "password"}" id="set-lms-url"
+              value="${U.escapeHtml(st.lmsIcalUrl || "")}"
+              placeholder="https://lms-tokyo.iput.ac.jp/calendar/export_execute.php?...">
+            <button class="btn btn-ghost btn-sm" id="set-lms-toggle" type="button">${lmsUrlVisible ? "隠す" : "表示"}</button>
           </div>
         </div>
         <div class="set-lms-actions">
-          <button class="btn btn-secondary btn-sm" id="set-lms-test" type="button"${hasToken ? "" : " disabled"}>接続テスト</button>
-          <button class="btn btn-secondary btn-sm" id="set-lms-sync" type="button"${hasToken ? "" : " disabled"}>今すぐ同期</button>
+          <button class="btn btn-secondary btn-sm" id="set-lms-test" type="button"${hasUrl ? "" : " disabled"}>接続テスト</button>
+          <button class="btn btn-secondary btn-sm" id="set-lms-sync" type="button"${hasUrl ? "" : " disabled"}>今すぐ同期</button>
           <span class="hint mono">最終取得: ${U.escapeHtml(lastSyncLabel(st))}</span>
         </div>
         ${status}
@@ -78,29 +79,30 @@ KD.settings = (() => {
           <span>アプリを開いたときに自動で取り込む</span>
         </label>
         <details class="set-lms-help">
-          <summary>トークンの取得方法</summary>
+          <summary>カレンダーURLの取得方法</summary>
           <ol class="set-lms-steps">
-            <li>ブラウザで <span class="mono">lms-tokyo.iput.ac.jp</span> にログイン</li>
-            <li>右上の自分の名前 → <strong>環境設定</strong> → <strong>セキュリティキー</strong></li>
-            <li><strong>Moodle モバイルウェブサービス</strong> のキーをコピー</li>
+            <li>LMSにログインして <strong>カレンダー</strong> を開く</li>
+            <li>ページ下部の <strong>カレンダーをエクスポートする</strong> をクリック</li>
+            <li><strong>すべてのイベント</strong> と <strong>今後60日間</strong> を選ぶ</li>
+            <li><strong>カレンダーURLを取得する</strong> を押し、表示されたURLをコピー</li>
             <li>上の欄に貼り付け → 接続テスト</li>
           </ol>
-          <p class="hint">パスワードは入力しません。トークンはこの端末のブラウザ内にのみ保存され、LMSからいつでも無効化できます。取得した課題の締切はコマドリの課題タブに表示されます。</p>
+          <p class="hint">パスワードは入力しません。このURLはあなた専用の読み取り専用リンクで、この端末のブラウザ内にのみ保存されます。取り込んだ課題の完了マークやメモは、再同期しても消えません。</p>
         </details>
       </div>
     `;
   }
 
   function bindLms() {
-    const tokenEl = document.getElementById("set-lms-token");
-    tokenEl?.addEventListener("blur", () => {
-      S.updateSettings({ lmsToken: tokenEl.value.trim() });
+    const urlEl = document.getElementById("set-lms-url");
+    urlEl?.addEventListener("blur", () => {
+      S.updateSettings({ lmsIcalUrl: urlEl.value.trim() });
       U.toast("保存しました");
       render();
     });
     document.getElementById("set-lms-toggle")?.addEventListener("click", () => {
-      if (tokenEl) S.updateSettings({ lmsToken: tokenEl.value.trim() });
-      lmsTokenVisible = !lmsTokenVisible;
+      if (urlEl) S.updateSettings({ lmsIcalUrl: urlEl.value.trim() });
+      lmsUrlVisible = !lmsUrlVisible;
       render();
     });
     document.getElementById("set-lms-auto")?.addEventListener("change", (e) => {
@@ -109,14 +111,16 @@ KD.settings = (() => {
     });
 
     document.getElementById("set-lms-test")?.addEventListener("click", async (e) => {
-      if (tokenEl) S.updateSettings({ lmsToken: tokenEl.value.trim() });
-      const btn = e.target;
-      btn.disabled = true;
+      if (urlEl) S.updateSettings({ lmsIcalUrl: urlEl.value.trim() });
+      e.target.disabled = true;
       lmsStatus = { kind: "ok", text: "接続中…" };
       render();
       try {
-        const info = await KD.lms.test(S.getSettings().lmsToken);
-        lmsStatus = { kind: "ok", text: `接続成功: ${info.userName || "?"} (${info.siteName || "LMS"})` };
+        const info = await KD.lms.test();
+        lmsStatus = {
+          kind: "ok",
+          text: `接続成功: 予定${info.total}件を取得(うち課題として取り込む対象 ${info.upcoming}件)`,
+        };
       } catch (err) {
         lmsStatus = { kind: "err", text: friendlyLmsError(err) };
       }
@@ -124,9 +128,8 @@ KD.settings = (() => {
     });
 
     document.getElementById("set-lms-sync")?.addEventListener("click", async (e) => {
-      if (tokenEl) S.updateSettings({ lmsToken: tokenEl.value.trim() });
-      const btn = e.target;
-      btn.disabled = true;
+      if (urlEl) S.updateSettings({ lmsIcalUrl: urlEl.value.trim() });
+      e.target.disabled = true;
       lmsStatus = { kind: "ok", text: "同期中…" };
       render();
       try {
@@ -143,9 +146,9 @@ KD.settings = (() => {
   function friendlyLmsError(err) {
     const m = (err && err.message) || "不明なエラー";
     if (m === "PROXY_MISSING") {
-      return "中継サーバーが必要です。Vercelにデプロイするか `vercel dev` で起動してください(ローカルの簡易サーバーでは使えません)";
+      return "中継サーバーが必要です。komadori.vercel.app から開いてください(ローカルの簡易サーバーでは使えません)";
     }
-    if (m === "NO_TOKEN") return "トークンを入力してください";
+    if (m === "NO_URL") return "カレンダーURLを入力してください";
     return m;
   }
 

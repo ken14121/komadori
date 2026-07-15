@@ -1,27 +1,24 @@
-/* コマドリ api/lms.js — Moodle(Open LMS) Web Services への中継関数
+/* コマドリ api/lms.js — LMS カレンダー(iCal)フィードの中継
  *
  * なぜ必要か:
- *   Moodle の /webservice/rest/server.php は CORS ヘッダーを返さないため、
- *   ブラウザから直接呼べない。この関数が同一オリジンの窓口になる。
+ *   Moodle の iCal エクスポート URL は CORS ヘッダーを返さないため、
+ *   ブラウザから直接 fetch できない。この関数が同一オリジンの窓口になる。
+ *
+ * なぜ iCal なのか:
+ *   この学校の LMS は Web Services(トークン)を学生に開放していない
+ *   (/user/managetoken.php が空)。一方 iCal エクスポートは Moodle の標準機能で、
+ *   URL 自体に個人用の authtoken が埋まっているためパスワードを扱わずに済む。
  *
  * 設計方針:
- *   - トークンはリクエストごとにクライアントから受け取り、転送するだけ。保存も記録もしない。
- *   - 転送先は LMS_BASE 1ホストに固定(任意URLへの踏み台にできない)。
- *   - wsfunction は読み取り専用の許可リストのみ。
- *   - /login/token.php は意図的に中継しない(パスワード総当たりの経路を作らないため)。
- *     トークンは利用者が Moodle の「セキュリティキー」画面から取得する。
+ *   - URL はリクエストごとにクライアントから受け取り、転送するだけ。保存も記録もしない。
+ *   - 転送先は LMS_BASE の export_execute.php に固定(任意URLへの踏み台にできない)。
+ *   - 取得のみ。LMS に書き込む経路は持たない。
  */
 
 const LMS_BASE = process.env.LMS_BASE || "https://lms-tokyo.iput.ac.jp";
-
-// 読み取り専用の関数のみ許可
-const ALLOWED_FN = new Set([
-  "core_webservice_get_site_info",
-  "core_calendar_get_action_events_by_timesort",
-  "core_enrol_get_users_courses",
-]);
-
+const ALLOWED_PATH = "/calendar/export_execute.php";
 const TIMEOUT_MS = 20000;
+const MAX_BYTES = 2 * 1024 * 1024; // iCal が異常に大きい場合の保険
 
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
@@ -33,56 +30,56 @@ module.exports = async function handler(req, res) {
   if (typeof body === "string") {
     try { body = JSON.parse(body); } catch (e) { body = null; }
   }
-  if (!body || typeof body !== "object") {
-    return res.status(400).json({ error: "invalid body" });
+  if (!body || typeof body !== "object" || !body.url) {
+    return res.status(400).json({ error: "url required" });
   }
 
-  const { fn, token, params } = body;
-
-  if (!token || typeof token !== "string") {
-    return res.status(400).json({ error: "token required" });
+  // 転送先の検証: LMS_BASE のカレンダーエクスポートのみ許可
+  let target;
+  try {
+    target = new URL(String(body.url));
+  } catch (e) {
+    return res.status(400).json({ error: "URLの形式が正しくありません" });
   }
-  if (!fn || !ALLOWED_FN.has(fn)) {
-    return res.status(400).json({ error: "function not allowed" });
-  }
 
-  const form = new URLSearchParams();
-  form.set("wstoken", token);
-  form.set("wsfunction", fn);
-  form.set("moodlewsrestformat", "json");
-  if (params && typeof params === "object") {
-    for (const [k, v] of Object.entries(params)) {
-      if (v === null || v === undefined) continue;
-      // ネストは使わない前提。スカラーのみ通す。
-      if (typeof v === "object") continue;
-      form.set(k, String(v));
-    }
+  const base = new URL(LMS_BASE);
+  if (target.protocol !== "https:" || target.host !== base.host) {
+    return res.status(400).json({ error: `${base.host} のURLのみ利用できます` });
+  }
+  if (target.pathname !== ALLOWED_PATH) {
+    return res.status(400).json({
+      error: "カレンダーのエクスポートURLではありません(export_execute.php を含むURLを貼ってください)",
+    });
   }
 
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
 
   try {
-    const upstream = await fetch(`${LMS_BASE}/webservice/rest/server.php`, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: form,
+    const upstream = await fetch(target.toString(), {
+      method: "GET",
+      headers: { accept: "text/calendar, text/plain, */*" },
       signal: ac.signal,
+      redirect: "follow",
     });
     clearTimeout(timer);
 
-    const text = await upstream.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      // Moodle が HTML(メンテ画面・ログインページ等)を返した場合
-      return res.status(502).json({ error: "LMS が予期しない応答を返しました" });
+    const text = (await upstream.text()).slice(0, MAX_BYTES);
+
+    if (!upstream.ok) {
+      return res.status(502).json({ error: `LMS がエラーを返しました (${upstream.status})` });
     }
 
-    // Moodle のエラーはHTTP 200で {exception, errorcode, message} として返る
+    // 認証切れ等ではログインHTMLが返ることがある
+    if (!/BEGIN:VCALENDAR/i.test(text)) {
+      return res.status(502).json({
+        error: "カレンダーを取得できませんでした。URLが失効している可能性があります(LMSで再取得してください)",
+      });
+    }
+
     res.setHeader("cache-control", "no-store");
-    return res.status(200).json(data);
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    return res.status(200).json({ ical: text });
   } catch (err) {
     clearTimeout(timer);
     if (err && err.name === "AbortError") {

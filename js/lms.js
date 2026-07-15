@@ -1,7 +1,9 @@
-/* コマドリ lms.js — LMS(Open LMS / Moodle)連携(グローバル KD.lms)
+/* コマドリ lms.js — LMS連携(Moodle カレンダー iCal フィード)(グローバル KD.lms)
  *
- * 課題の取得は Moodle 公式の Web Services API を使う。AI解析もスクレイピングも不要。
- * ブラウザ → /api/lms(中継関数) → LMS の順に呼ぶ(Moodleは直接叩くとCORSで弾かれるため)。
+ * 経路: ブラウザ → /api/lms(中継) → LMS の export_execute.php → iCal текст
+ * Moodle の Web Services(トークン)はこの学校では学生に開放されていないため、
+ * 標準機能の iCal エクスポートを使う。URL に個人用 authtoken が埋まっており、
+ * パスワードは一切扱わない。
  */
 window.KD = window.KD || {};
 
@@ -11,57 +13,86 @@ KD.lms = (() => {
 
   const PROXY = "./api/lms";
   const SYNC_THROTTLE_MS = 30 * 60 * 1000; // 起動時の自動同期は30分に1回まで
-  const LOOKBACK_DAYS = 7;                 // 期限切れも拾えるよう少し過去から
-  const LOOKAHEAD_DAYS = 60;
+  const LOOKBACK_DAYS = 14;                // 期限切れも少しは拾う
+  const LOOKAHEAD_DAYS = 120;
 
   let syncing = false;
 
-  /* ---------- API 呼び出し ---------- */
+  /* ---------- iCal パース ---------- */
 
-  async function call(fn, params, token) {
-    let r;
-    try {
-      r = await fetch(PROXY, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fn, token, params: params || {} }),
-      });
-    } catch (e) {
-      throw new Error("中継サーバーに接続できませんでした");
-    }
-
-    if (r.status === 404 || r.status === 405) {
-      throw new Error("PROXY_MISSING");
-    }
-
-    let data;
-    try {
-      data = await r.json();
-    } catch (e) {
-      throw new Error("応答を読み取れませんでした");
-    }
-
-    if (!r.ok) throw new Error(data.error || `エラー (${r.status})`);
-
-    // Moodle のエラーは HTTP 200 で返ってくる
-    if (data.exception || data.errorcode) {
-      if (data.errorcode === "invalidtoken" || data.errorcode === "accessexception") {
-        throw new Error("トークンが無効です。LMSで再発行してください");
-      }
-      throw new Error(data.message || data.errorcode);
-    }
-    return data;
+  /** 折り返し行(次行が空白/タブ始まり)を連結する */
+  function unfold(text) {
+    return String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n[ \t]/g, "");
   }
 
-  /* ---------- 接続テスト ---------- */
+  /** iCal のエスケープを戻す */
+  function unescapeIcal(v) {
+    return String(v)
+      .replace(/\\n/gi, "\n")
+      .replace(/\\,/g, ",")
+      .replace(/\\;/g, ";")
+      .replace(/\\\\/g, "\\");
+  }
 
-  async function test(token) {
-    const info = await call("core_webservice_get_site_info", {}, token);
-    return {
-      siteName: info.sitename || "",
-      userName: info.fullname || info.username || "",
-      userId: info.userid || null,
-    };
+  /** DTSTART の値 → Date。UTC(末尾Z)・日付のみ・TZID付きに対応 */
+  function parseIcalDate(raw, params) {
+    const v = String(raw).trim();
+    let m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/.exec(v);
+    if (m) {
+      const [, y, mo, d, h, mi, s, z] = m;
+      // Z ならUTC、無ければ現地時刻として解釈(TZIDは端末TZで近似)
+      return z
+        ? new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s))
+        : new Date(+y, +mo - 1, +d, +h, +mi, +s);
+    }
+    m = /^(\d{4})(\d{2})(\d{2})$/.exec(v);
+    if (m) {
+      const [, y, mo, d] = m;
+      const date = new Date(+y, +mo - 1, +d);
+      date.__dateOnly = true;
+      return date;
+    }
+    return null;
+  }
+
+  /** iCal テキスト → VEVENT の配列 */
+  function parseIcal(text) {
+    const lines = unfold(text).split("\n");
+    const events = [];
+    let cur = null;
+
+    for (const line of lines) {
+      if (/^BEGIN:VEVENT/i.test(line)) { cur = {}; continue; }
+      if (/^END:VEVENT/i.test(line)) { if (cur) events.push(cur); cur = null; continue; }
+      if (!cur) continue;
+
+      const idx = line.indexOf(":");
+      if (idx < 0) continue;
+      const left = line.slice(0, idx);
+      const value = line.slice(idx + 1);
+      const [name, ...paramParts] = left.split(";");
+      const key = name.trim().toUpperCase();
+      const params = {};
+      paramParts.forEach((p) => {
+        const eq = p.indexOf("=");
+        if (eq > 0) params[p.slice(0, eq).toUpperCase()] = p.slice(eq + 1);
+      });
+
+      if (key === "DTSTART") cur.dtstart = parseIcalDate(value, params);
+      else if (key === "UID") cur.uid = value.trim();
+      else if (key === "SUMMARY") cur.summary = unescapeIcal(value);
+      else if (key === "CATEGORIES") cur.categories = unescapeIcal(value);
+      else if (key === "DESCRIPTION") cur.description = unescapeIcal(value);
+    }
+    return events;
+  }
+
+  /** Moodleの件名から締切表現の定型句を落とす(「◯◯ は締め切りです」等) */
+  function cleanTitle(summary) {
+    let t = String(summary || "").trim();
+    t = t.replace(/\s*(は締め切りです|が締め切られます|の締切|は終了しました)\s*$/u, "");
+    t = t.replace(/\s+(is due|closes|opens|due)\s*$/i, "");
+    return t.trim() || "無題の課題";
   }
 
   /* ---------- 授業名の突き合わせ ---------- */
@@ -80,10 +111,9 @@ KD.lms = (() => {
     const target = norm(lmsCourseName);
     if (!target) return null;
 
-    let hit = courses.find((c) => norm(c.name) === target);
-    if (hit) return hit.id;
+    const exact = courses.find((c) => norm(c.name) === target);
+    if (exact) return exact.id;
 
-    // 部分一致(長い名前を優先して誤爆を減らす)
     const candidates = courses
       .filter((c) => {
         const n = norm(c.name);
@@ -93,50 +123,78 @@ KD.lms = (() => {
     return candidates.length ? candidates[0].id : null;
   }
 
-  /* ---------- Moodleイベント → 課題 ---------- */
+  /* ---------- 取得 ---------- */
 
-  function mapEvent(ev) {
-    if (!ev || ev.id == null) return null;
-    const ts = ev.timesort || ev.timestart;
-    if (!ts) return null;
-    const d = new Date(ts * 1000);
-    if (isNaN(d)) return null;
+  async function fetchIcal(url) {
+    let r;
+    try {
+      r = await fetch(PROXY, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+    } catch (e) {
+      throw new Error("中継サーバーに接続できませんでした");
+    }
+    if (r.status === 404 || r.status === 405) throw new Error("PROXY_MISSING");
 
-    const courseName = (ev.course && (ev.course.fullname || ev.course.shortname)) || "";
-    const url = ev.url || (ev.action && ev.action.url) || "";
+    let data;
+    try {
+      data = await r.json();
+    } catch (e) {
+      throw new Error("応答を読み取れませんでした");
+    }
+    if (!r.ok) throw new Error(data.error || `エラー (${r.status})`);
+    if (!data.ical) throw new Error("カレンダーが空でした");
+    return data.ical;
+  }
 
-    return {
-      lmsId: String(ev.id),
-      title: ev.name || ev.activityname || "無題の課題",
-      due: U.todayISO(d),
-      dueTime: `${U.pad(d.getHours())}:${U.pad(d.getMinutes())}`,
-      courseName,
-      courseId: matchCourseId(courseName),
-      url,
-    };
+  /** 接続テスト: 取得できたイベント数を返す */
+  async function test(url) {
+    const ical = await fetchIcal(url || S.getSettings().lmsIcalUrl);
+    const events = parseIcal(ical);
+    return { total: events.length, upcoming: toAssignments(events).length };
+  }
+
+  /* ---------- VEVENT → 課題 ---------- */
+
+  function toAssignments(events) {
+    const now = Date.now();
+    const from = now - LOOKBACK_DAYS * 86400000;
+    const to = now + LOOKAHEAD_DAYS * 86400000;
+
+    return events
+      .map((ev) => {
+        if (!ev.uid || !ev.dtstart || isNaN(ev.dtstart)) return null;
+        const t = ev.dtstart.getTime();
+        if (t < from || t > to) return null;
+
+        const d = ev.dtstart;
+        const courseName = (ev.categories || "").trim();
+        return {
+          lmsId: ev.uid,
+          title: cleanTitle(ev.summary),
+          due: U.todayISO(d),
+          dueTime: d.__dateOnly ? null : `${U.pad(d.getHours())}:${U.pad(d.getMinutes())}`,
+          courseName,
+          courseId: matchCourseId(courseName),
+          url: "",
+        };
+      })
+      .filter(Boolean);
   }
 
   /* ---------- 同期 ---------- */
 
   async function sync() {
-    const token = S.getSettings().lmsToken;
-    if (!token) throw new Error("NO_TOKEN");
+    const url = S.getSettings().lmsIcalUrl;
+    if (!url) throw new Error("NO_URL");
     if (syncing) return { added: 0, updated: 0, skipped: true };
     syncing = true;
     try {
-      const now = Math.floor(Date.now() / 1000);
-      const data = await call(
-        "core_calendar_get_action_events_by_timesort",
-        {
-          timesortfrom: now - LOOKBACK_DAYS * 86400,
-          timesortto: now + LOOKAHEAD_DAYS * 86400,
-          limitnum: 50,
-          limittononsuspendedevents: 1,
-        },
-        token
-      );
-      const events = (data.events || []).map(mapEvent).filter(Boolean);
-      return S.upsertLmsAssignments(events);
+      const ical = await fetchIcal(url);
+      const list = toAssignments(parseIcal(ical));
+      return S.upsertLmsAssignments(list);
     } finally {
       syncing = false;
     }
@@ -145,7 +203,7 @@ KD.lms = (() => {
   /** 起動時の自動同期。失敗しても画面は壊さず静かに諦める */
   async function autoSync() {
     const st = S.getSettings();
-    if (!st.lmsToken || st.lmsAutoSync === false) return;
+    if (!st.lmsIcalUrl || st.lmsAutoSync === false) return;
     if (st.lmsLastSync) {
       const age = Date.now() - new Date(st.lmsLastSync).getTime();
       if (age >= 0 && age < SYNC_THROTTLE_MS) return;
@@ -154,13 +212,13 @@ KD.lms = (() => {
       const r = await sync();
       if (r.added > 0) U.toast(`LMSから課題を${r.added}件取り込みました`);
     } catch (e) {
-      if (e.message !== "PROXY_MISSING" && e.message !== "NO_TOKEN") {
+      if (e.message !== "PROXY_MISSING" && e.message !== "NO_URL") {
         console.warn("LMS auto sync failed:", e.message);
       }
     }
   }
 
-  const isConfigured = () => !!S.getSettings().lmsToken;
+  const isConfigured = () => !!S.getSettings().lmsIcalUrl;
 
-  return { test, sync, autoSync, isConfigured, matchCourseId };
+  return { test, sync, autoSync, isConfigured, matchCourseId, parseIcal, toAssignments, cleanTitle };
 })();

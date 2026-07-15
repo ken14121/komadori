@@ -2,7 +2,7 @@
  *
  * データモデル:
  *   settings  { theme:'auto'|'light'|'dark', apiKey, model, attendanceUrl, activeSemesterId,
- *               lmsToken, lmsAutoSync, lmsLastSync }
+ *               lmsIcalUrl, lmsAutoSync, lmsLastSync }
  *   semesters [{ id, year, label, periods:[{no,start,end}] }]
  *   courses   [{ id, semesterId, name, room, instructor, memo, url, colorKey:1-8,
  *                absenceLimit, slots:[{day:0-6(0=月), period:1-8}] }]
@@ -34,7 +34,7 @@ KD.store = (() => {
       model: "claude-opus-4-8",
       attendanceUrl: "",
       activeSemesterId: null,
-      lmsToken: "",
+      lmsIcalUrl: "",
       lmsAutoSync: true,
       lmsLastSync: null,
     },
