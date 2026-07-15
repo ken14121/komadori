@@ -233,6 +233,12 @@
 
 .set-usage-note { margin-top: 10px; }
 
+/* 欠席上限 */
+.set-abs-row { display: flex; align-items: flex-end; gap: 10px; }
+.set-abs-row .field { flex: 0 0 108px; }
+.set-abs-row input { text-align: center; }
+.set-abs-row .btn { flex: 1; }
+
 /* ---------- LMS連携 ---------- */
 .set-lms-actions {
   display: flex; flex-wrap: wrap; gap: 8px;

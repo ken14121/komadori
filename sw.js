@@ -1,5 +1,8 @@
-/* コマドリ sw.js — Service Worker */
-const VERSION = "komadori-v1";
+/* コマドリ sw.js — Service Worker
+ * 方針: オンラインなら常に最新を配る(network-first)。キャッシュは圏外用の保険。
+ * 更新のたびに VERSION を上げると、古いキャッシュが activate で破棄される。
+ */
+const VERSION = "komadori-v2";
 const FONT_CACHE = VERSION + "-fonts";
 
 const PRECACHE = [
@@ -65,20 +68,21 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 同一オリジン: cache-first + stale-while-revalidate
+  // 同一オリジン: network-first。
+  // cache-first だと更新のたびに必ず1回古い版が表示される(次回訪問でようやく新しくなる)ため、
+  // オンラインなら常に最新を配り、キャッシュはオフライン時のフォールバックに徹させる。
+  // ファイルは全部で数十KBなので、毎回取りに行っても体感差はない。
   if (isSameOrigin) {
     event.respondWith(
-      caches.match(req).then((cached) => {
-        const network = fetch(req)
-          .then((res) => {
-            if (res && res.ok) {
-              caches.open(VERSION).then((cache) => cache.put(req, res.clone()));
-            }
-            return res;
-          })
-          .catch(() => cached);
-        return cached || network;
-      })
+      fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(VERSION).then((cache) => cache.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req)) // 圏外: キャッシュから返す(時間割はオフラインで開ける)
     );
     return;
   }

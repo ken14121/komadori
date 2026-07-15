@@ -2,7 +2,7 @@
  *
  * データモデル:
  *   settings  { theme:'auto'|'light'|'dark', apiKey, model, attendanceUrl, activeSemesterId,
- *               lmsIcalUrl, lmsAutoSync, lmsLastSync }
+ *               lmsIcalUrl, lmsAutoSync, lmsLastSync, absenceLimitDefault }
  *   semesters [{ id, year, label, periods:[{no,start,end}] }]
  *   courses   [{ id, semesterId, name, room, instructor, memo, url, attendanceUrl, lmsCode,
  *                colorKey:1-8, absenceLimit, slots:[{day:0-6(0=月), period:1-8}] }]
@@ -41,6 +41,7 @@ KD.store = (() => {
       lmsIcalUrl: "",
       lmsAutoSync: true,
       lmsLastSync: null,
+      absenceLimitDefault: 3,
     },
     semesters: [],
     courses: [],
@@ -151,7 +152,7 @@ KD.store = (() => {
       attendanceUrl: obj.attendanceUrl || "",
       lmsCode: obj.lmsCode || "",
       colorKey: obj.colorKey || U.colorForName(obj.name || ""),
-      absenceLimit: obj.absenceLimit ?? 5,
+      absenceLimit: obj.absenceLimit ?? defaultAbsenceLimit(),
       slots: (obj.slots || []).map((s) => ({ day: s.day, period: s.period })),
     };
     state.courses.push(course);
@@ -195,6 +196,24 @@ KD.store = (() => {
 
   const absenceCount = (courseId) =>
     state.attendance.filter((a) => a.courseId === courseId && a.status === "absent").length;
+
+  /** 欠席上限の既定値(新しい授業に使う) */
+  function defaultAbsenceLimit() {
+    const n = Number(state.settings.absenceLimitDefault);
+    return Number.isFinite(n) && n >= 0 ? n : 3;
+  }
+
+  /** 全授業の欠席上限をまとめて変更する。@returns 変更した件数 */
+  function applyAbsenceLimitToAll(limit) {
+    const n = Math.max(0, Number(limit) || 0);
+    let changed = 0;
+    state.courses.forEach((c) => {
+      if (c.absenceLimit !== n) { c.absenceLimit = n; changed++; }
+    });
+    state.settings.absenceLimitDefault = n;
+    commit();
+    return changed;
+  }
 
   /* ---------- assignments ---------- */
   const listAssignments = () => state.assignments;
@@ -357,6 +376,7 @@ KD.store = (() => {
     addSemester, updateSemester, deleteSemester, setActiveSemester,
     coursesOf, getCourse, courseAt, addCourse, updateCourse, deleteCourse,
     attendanceOf, getAttendance, setAttendance, absenceCount,
+    defaultAbsenceLimit, applyAbsenceLimitToAll,
     listAssignments, assignmentsOf, getAssignment, pendingCount, pendingTotal,
     addAssignment, updateAssignment, deleteAssignment, upsertLmsAssignments,
     applyImport, loadSample,

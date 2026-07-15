@@ -21,6 +21,7 @@ KD.settings = (() => {
     el.innerHTML = `
       <div class="set-wrap">
         ${panelTheme(st)}
+        ${panelAbsence(st)}
         ${panelAttendance(st)}
         ${panelLms(st)}
         ${panelAI(st)}
@@ -30,6 +31,7 @@ KD.settings = (() => {
       </div>
     `;
     bindTheme();
+    bindAbsence();
     bindAttendance();
     bindLms();
     bindAI();
@@ -262,6 +264,53 @@ KD.settings = (() => {
         U.toast("テーマを変更しました");
         render();
       });
+    });
+  }
+
+  /* ---------- 欠席上限 ---------- */
+
+  function panelAbsence(st) {
+    const def = S.defaultAbsenceLimit();
+    const sems = S.listSemesters();
+    const total = sems.reduce((n, s) => n + S.coursesOf(s.id).length, 0);
+    const differing = sems.reduce(
+      (n, s) => n + S.coursesOf(s.id).filter((c) => (c.absenceLimit ?? def) !== def).length, 0
+    );
+    return `
+      <div class="panel set-panel">
+        <div class="set-title">欠席上限</div>
+        <div class="set-abs-row">
+          <div class="field" style="margin:0">
+            <label>既定値(新しい授業に使う)</label>
+            <input type="number" min="0" max="99" inputmode="numeric" class="mono" id="set-abs-default" value="${def}">
+          </div>
+          <button class="btn btn-secondary btn-sm" id="set-abs-apply"${total ? "" : " disabled"}>
+            全${total}授業に適用
+          </button>
+        </div>
+        <p class="hint">
+          欠席がこの回数に近づくと授業カードが警告色になります。
+          ${differing ? `<strong>現在 ${differing}件の授業が別の上限です。</strong>` : "すべての授業が既定値です。"}
+          授業ごとに変えたい場合は、授業をタップ →「出欠」タブで設定できます。
+        </p>
+      </div>
+    `;
+  }
+
+  function bindAbsence() {
+    const el = document.getElementById("set-abs-default");
+    el?.addEventListener("change", () => {
+      const n = Math.max(0, Number(el.value) || 0);
+      S.updateSettings({ absenceLimitDefault: n });
+      U.toast("既定値を保存しました");
+      render();
+    });
+    document.getElementById("set-abs-apply")?.addEventListener("click", () => {
+      const n = Math.max(0, Number(document.getElementById("set-abs-default").value) || 0);
+      if (!window.confirm(`すべての授業の欠席上限を ${n} にします。\n個別に設定した上限も上書きされます。`)) return;
+      const changed = S.applyAbsenceLimitToAll(n);
+      U.toast(changed ? `${changed}件の授業を上限${n}にしました` : "すべて既に上限" + n + "でした");
+      render();
     });
   }
 

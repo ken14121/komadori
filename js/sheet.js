@@ -209,7 +209,7 @@
     ).join("");
 
     const absent = S.absenceCount(c.id);
-    const limit = c.absenceLimit ?? 5;
+    const limit = c.absenceLimit ?? S.defaultAbsenceLimit();
     const lv = absent >= limit ? "is-over" : (absent >= limit - 1 ? "is-warn" : "");
 
     const hist = S.attendanceOf(c.id).slice(0, 10).map((a) =>
