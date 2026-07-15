@@ -12,8 +12,36 @@
  *   平文でRedisに置くのは上記3点で許容範囲と判断(保持は最大10分・一度きり)。
  */
 
-const REST_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-const REST_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+/* Redis の接続情報を環境変数から探す。
+ * Vercel の Upstash 連携は、接続時に指定した prefix で変数名が決まる
+ * (KV_REST_API_URL / UPSTASH_REDIS_REST_URL / STORAGE_REST_API_URL など)。
+ * prefix を何にされても動くよう、既知の名前 → 末尾一致の順で探す。 */
+function findRedisCreds() {
+  const env = process.env;
+  const known = [
+    ["KV_REST_API_URL", "KV_REST_API_TOKEN"],
+    ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
+    ["STORAGE_REST_API_URL", "STORAGE_REST_API_TOKEN"],
+    ["REDIS_REST_API_URL", "REDIS_REST_API_TOKEN"],
+  ];
+  for (const [u, t] of known) {
+    if (env[u] && env[t]) return { url: env[u], token: env[t] };
+  }
+  // 未知の prefix: *_REST_API_URL と *_REST_API_TOKEN の組を探す
+  const keys = Object.keys(env);
+  const urlKey = keys.find((k) => k.endsWith("_REST_API_URL"));
+  const tokenKey = keys.find(
+    (k) => k.endsWith("_REST_API_TOKEN") && !k.includes("READ_ONLY")
+  );
+  if (urlKey && tokenKey && env[urlKey] && env[tokenKey]) {
+    return { url: env[urlKey], token: env[tokenKey] };
+  }
+  return null;
+}
+
+const CREDS = findRedisCreds();
+const REST_URL = CREDS && CREDS.url;
+const REST_TOKEN = CREDS && CREDS.token;
 
 const TTL_SEC = 600;             // コードの有効期限(10分)
 const MAX_BYTES = 512 * 1024;    // 本文の上限
