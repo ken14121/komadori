@@ -324,10 +324,11 @@ KD.settings = (() => {
           <label>共通の出席URL(任意)</label>
           <input type="text" id="set-attendance-url" placeholder="https://..." value="${U.escapeHtml(st.attendanceUrl || "")}">
         </div>
+        <button class="btn btn-secondary btn-sm" id="set-att-bulk" type="button">出席URLをまとめて貼り付け</button>
         <p class="hint">
           ヘッダーの[出席アプリ]は<strong>進行中の授業の出席ページ</strong>を開きます。
-          教科ごとのURLは、時間割で授業をタップ →「基本情報」→<strong>出席ページURL</strong> で設定してください。
-          ここは、その授業に個別のURLが無いときに使う共通のURLです。
+          教科ごとのURLは、時間割で授業をタップ →「基本情報」→<strong>出席ページURL</strong> でも設定できます。
+          上の共通URLは、その授業に個別のURLが無いときに使われます。
         </p>
       </div>
     `;
@@ -338,6 +339,100 @@ KD.settings = (() => {
     el?.addEventListener("blur", () => {
       S.updateSettings({ attendanceUrl: el.value.trim() });
       U.toast("保存しました");
+    });
+    document.getElementById("set-att-bulk")?.addEventListener("click", openAttBulkSheet);
+  }
+
+  /* ---------- 出席URLの一括貼り付け ----------
+   * 「授業名 + URL」が並んだテキストを丸ごと受け取って各授業に割り当てる。
+   * 名前とURLが同じ行でも別の行でも拾えるよう、URLの位置を基準に切り出す。
+   */
+
+  /** 授業名の表記ゆれを吸収して比較する(・や全角/ローマ数字の違いを無視) */
+  const ROMAN = { "Ⅰ": "1", "Ⅱ": "2", "Ⅲ": "3", "Ⅳ": "4", "Ⅴ": "5", "Ⅵ": "6" };
+  const normName = (s) =>
+    String(s || "")
+      .replace(/[ⅠⅡⅢⅣⅤⅥ]/g, (m) => ROMAN[m])
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+      .replace(/[\s　・･/／,、.。()（）:：\-ー―_]/g, "")
+      .toLowerCase();
+
+  /** テキスト → [{name, url}] */
+  function parseAttBulk(text) {
+    const out = [];
+    const re = /https?:\/\/[^\s"'<>]+/g;
+    let last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      const name = text.slice(last, m.index).trim();
+      out.push({ name, url: m[0] });
+      last = m.index + m[0].length;
+    }
+    return out;
+  }
+
+  /** 名前 → 授業。完全一致 → 部分一致(長い方を優先) */
+  function findCourseByName(name) {
+    const sem = S.getActiveSemester();
+    if (!sem || !name) return null;
+    const courses = S.coursesOf(sem.id);
+    const t = normName(name);
+    if (!t) return null;
+    const exact = courses.find((c) => normName(c.name) === t);
+    if (exact) return exact;
+    return courses
+      .filter((c) => {
+        const n = normName(c.name);
+        return n.length >= 2 && (n.includes(t) || t.includes(n));
+      })
+      .sort((a, b) => normName(b.name).length - normName(a.name).length)[0] || null;
+  }
+
+  function openAttBulkSheet() {
+    KD.sheet.open(`
+      <div class="sheet-head"><h2>出席URLをまとめて貼り付け</h2></div>
+      <p class="hint" style="margin-bottom:8px">
+        授業名とURLが並んだテキストをそのまま貼ってください。行が分かれていても、同じ行でも大丈夫です。
+      </p>
+      <div class="field">
+        <textarea id="ab-text" rows="7" placeholder="深層学習&#10;https://lms-tokyo.iput.ac.jp/mod/attendance/view.php?id=94465&#10;社会と倫理&#10;https://lms-tokyo.iput.ac.jp/mod/attendance/view.php?id=93600"></textarea>
+      </div>
+      <div id="ab-preview"></div>
+      <div class="sheet-actions">
+        <button class="btn btn-secondary" id="ab-check">照合する</button>
+        <button class="btn btn-primary" id="ab-apply" disabled>適用する</button>
+      </div>
+    `);
+
+    let parsed = [];
+
+    const renderPreview = () => {
+      const rows = parsed.map((p, i) => `
+        <div class="ab-row${p.course ? "" : " is-miss"}">
+          <span class="ab-in">${U.escapeHtml(p.name || "(名前なし)")}</span>
+          <span class="ab-arrow">→</span>
+          <span class="ab-out">${p.course ? U.escapeHtml(p.course.name) : "該当なし"}</span>
+        </div>`).join("");
+      const hit = parsed.filter((p) => p.course).length;
+      document.getElementById("ab-preview").innerHTML = `
+        <div class="ab-list">${rows}</div>
+        <p class="hint">${hit}/${parsed.length}件が一致しました。${parsed.length - hit ? "該当なしのものは無視されます。" : ""}</p>`;
+      document.getElementById("ab-apply").disabled = hit === 0;
+    };
+
+    document.getElementById("ab-check").addEventListener("click", () => {
+      const text = document.getElementById("ab-text").value;
+      parsed = parseAttBulk(text).map((p) => ({ ...p, course: findCourseByName(p.name) }));
+      if (!parsed.length) { U.toast("URLが見つかりませんでした"); return; }
+      renderPreview();
+    });
+
+    document.getElementById("ab-apply").addEventListener("click", () => {
+      const hits = parsed.filter((p) => p.course);
+      if (!hits.length) return;
+      hits.forEach((p) => S.updateCourse(p.course.id, { attendanceUrl: p.url }));
+      U.toast(`${hits.length}件の授業に出席URLを設定しました`);
+      KD.sheet.close();
+      render();
     });
   }
 

@@ -233,6 +233,21 @@
 
 .set-usage-note { margin-top: 10px; }
 
+/* 出席URLの一括貼り付け */
+.ab-list { display: flex; flex-direction: column; gap: 5px; margin: 4px 0 8px; }
+.ab-row {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; line-height: 1.5;
+  padding: 5px 9px; border-radius: 8px;
+  background: var(--card); border: 1px solid var(--line);
+}
+.ab-row.is-miss { border-color: var(--danger); }
+.ab-in { flex: 1; min-width: 0; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-arrow { color: var(--faint); flex: none; }
+.ab-out { flex: 1.2; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-row.is-miss .ab-out { color: var(--danger); font-weight: 500; }
+#ab-text { font-size: 12px; line-height: 1.6; }
+
 /* 欠席上限 */
 .set-abs-row { display: flex; align-items: flex-end; gap: 10px; }
 .set-abs-row .field { flex: 0 0 108px; }
