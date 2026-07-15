@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>コマドリ — 時間割は、撮るだけ。</title>
+<meta name="description" content="写真1枚で時間割を自動作成。出欠・課題も管理できる軽量PWA。">
+<meta name="theme-color" content="#F6F5F1" id="meta-theme-color">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/modules.css">
+</head>
+<body>
+<div id="app">
+
+  <header id="app-header">
+    <div class="hdr-top">
+      <div class="hdr-eyebrow" id="hdr-eyebrow">コマドリ</div>
+      <div class="hdr-actions">
+        <button id="btn-attendance" class="chip" title="出席アプリを開く">出席アプリ</button>
+        <button id="btn-theme" class="chip chip-icon" title="テーマ切替" aria-label="テーマ切替">◐</button>
+        <button id="btn-semester" class="chip">学期切替</button>
+      </div>
+    </div>
+    <div class="hdr-main">
+      <h1 id="hdr-title">時間割</h1>
+      <div id="hdr-status" class="hdr-status"></div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="view-timetable" class="view is-active" aria-label="時間割">
+      <div id="grid" class="grid-wrap"></div>
+      <div id="empty-state" class="empty" hidden>
+        <div class="empty-icon">📷</div>
+        <p class="empty-title">時間割は、撮るだけ。</p>
+        <p class="empty-sub">履修ポータルのスクショや紙の時間割を<br>写真に撮るだけで自動で反映されます。</p>
+        <button id="btn-empty-import" class="btn btn-primary">📷 写真から作る</button>
+        <div class="empty-row">
+          <button id="btn-empty-manual" class="btn btn-secondary">手で入力する</button>
+          <button id="btn-empty-sample" class="btn btn-ghost">サンプルを見る</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-assignments" class="view" aria-label="課題">
+      <div id="assignments-root"></div>
+    </section>
+
+    <section id="view-settings" class="view" aria-label="設定">
+      <div id="settings-root"></div>
+    </section>
+  </main>
+
+  <button id="fab-import" class="fab" title="写真から作る">
+    <span class="fab-cam" aria-hidden="true"></span>写真から作る
+  </button>
+
+  <nav id="tabbar" aria-label="メインナビゲーション">
+    <button class="tab is-active" data-view="timetable">時間割</button>
+    <button class="tab" data-view="assignments">課題<span id="tab-badge" class="badge" hidden></span></button>
+    <button class="tab" data-view="settings">設定</button>
+  </nav>
+
+  <div id="sheet-backdrop" hidden></div>
+  <div id="sheet" role="dialog" aria-modal="true" hidden></div>
+
+  <div id="import-overlay" role="dialog" aria-modal="true" hidden></div>
+
+  <div id="toast" role="status" hidden></div>
+</div>
+
+<script src="js/util.js"></script>
+<script src="js/store.js"></script>
+<script src="js/lms.js"></script>
+<script src="js/grid.js"></script>
+<script src="js/sheet.js"></script>
+<script src="js/assignments.js"></script>
+<script src="js/importer.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

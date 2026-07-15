@@ -1,0 +1,293 @@
+/* ============================================================
+   コマドリ modules.css — インポート(js/importer.js) / 設定(js/settings.js) スタイル
+   base.css のトークンを利用。グラデーション不使用。
+   ============================================================ */
+
+/* ---------- インポートオーバーレイ 共通 ---------- */
+#import-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: var(--bg);
+  color: var(--ink);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.imp-shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.imp-topbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: calc(10px + env(safe-area-inset-top)) 14px 0;
+}
+
+.imp-close {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: var(--sub);
+  border-radius: 50%;
+  line-height: 1;
+}
+.imp-close:active { background: var(--line); }
+
+.imp-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 20px calc(32px + env(safe-area-inset-bottom));
+  max-width: 480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.imp-title {
+  font-weight: 900;
+  font-size: 21px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+/* ---------- (a) 選択画面 ---------- */
+.imp-select { margin: auto 0; text-align: center; }
+
+.imp-btn-photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 800;
+  font-size: 16px;
+  border-radius: 999px;
+  padding: 16px 24px;
+  box-shadow: var(--shadow);
+  margin: 0 0 16px;
+  cursor: pointer;
+  transition: transform .1s ease;
+}
+.imp-btn-photo:active { transform: scale(.97); }
+.imp-photo-icon { font-size: 19px; }
+
+.imp-hint { text-align: center; margin-top: 4px; }
+
+.imp-warn-card {
+  background: var(--warn-bg);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  text-align: left;
+}
+.imp-warn-card p { font-size: 13px; margin-bottom: 10px; color: var(--ink); }
+
+/* ---------- (b)/(c) 前処理・解析中 ---------- */
+.imp-progress-screen { margin: auto 0; text-align: center; }
+
+.imp-preview-thumb {
+  max-width: 220px;
+  max-height: 220px;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius-lg);
+  margin: 0 auto 22px;
+  box-shadow: var(--shadow);
+  display: block;
+  object-fit: contain;
+}
+
+.imp-progress-text { font-weight: 800; font-size: 15px; margin-bottom: 8px; }
+.imp-progress-timer { color: var(--sub); font-size: 13px; margin-bottom: 20px; }
+
+/* ---------- (d) 失敗画面 ---------- */
+.imp-fail { margin: auto 0; text-align: center; }
+.imp-fail-icon { font-size: 40px; margin-bottom: 12px; }
+.imp-fail-msg { font-size: 14px; margin-bottom: 22px; color: var(--ink); }
+.imp-fail-actions { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+
+/* ---------- 確認・修正画面(共通) ---------- */
+.imp-review { padding-top: 4px; }
+.imp-confirm-btn { width: 100%; margin-top: 18px; }
+
+/* ミニプレビューグリッド(時間割) */
+.imp-grid-preview {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 18px;
+  font-size: 10.5px;
+}
+.imp-grid-row { display: grid; grid-template-columns: 28px repeat(7, 1fr); }
+.imp-grid-row + .imp-grid-row { border-top: 1px solid var(--line); }
+.imp-grid-corner,
+.imp-grid-periodlabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  background: var(--cell);
+}
+.imp-grid-head { background: var(--card); }
+.imp-grid-daylabel { text-align: center; padding: 6px 2px; font-weight: 700; color: var(--sub); }
+.imp-grid-cell {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-left: 1px solid var(--line);
+  background: var(--card);
+}
+.imp-grid-cell-empty { background: transparent; }
+.imp-grid-cell.is-warn { background: var(--warn-bg); }
+
+/* 授業編集リスト */
+.imp-course-list { display: flex; flex-direction: column; gap: 12px; }
+.imp-course-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  position: relative;
+}
+.imp-course-row.is-warn { background: var(--warn-bg); border-color: transparent; }
+.imp-warn-tag {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--danger);
+  margin-bottom: 6px;
+}
+.imp-course-del { margin-top: 2px; }
+
+/* 課題確認リスト */
+.imp-assign-list { display: flex; flex-direction: column; gap: 12px; }
+.imp-assign-row {
+  display: flex;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.imp-assign-row.is-warn { background: var(--warn-bg); border-color: transparent; }
+.imp-assign-check {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 4px;
+  flex-shrink: 0;
+}
+.imp-assign-fields { flex: 1; min-width: 0; }
+.imp-assign-fields .field { margin-bottom: 8px; }
+.imp-assign-fields .field-row { margin-bottom: 0; }
+.imp-assign-fields .field-row .field { margin-bottom: 0; }
+
+/* ---------- 設定 ---------- */
+.set-wrap {
+  padding: 18px 16px calc(28px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 640px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.set-title {
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: .02em;
+  margin-bottom: 14px;
+}
+
+.set-seg {
+  display: flex;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.set-seg-btn {
+  flex: 1;
+  padding: 9px 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sub);
+  text-align: center;
+}
+.set-seg-btn.is-active { background: var(--accent); color: var(--accent-fg); }
+
+.set-apikey-row { display: flex; gap: 8px; }
+.set-apikey-row input { flex: 1; }
+
+.set-usage-note { margin-top: 10px; }
+
+/* ---------- LMS連携 ---------- */
+.set-lms-actions {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  align-items: center; margin-top: 4px;
+}
+.set-lms-status {
+  margin-top: 10px; font-size: 12.5px; line-height: 1.6;
+  border-left: 3px solid var(--line); padding: 2px 0 2px 10px;
+}
+.set-lms-status.is-ok { color: var(--sub); border-left-color: var(--accent); }
+.set-lms-status.is-err { color: var(--danger); border-left-color: var(--danger); }
+
+.set-lms-auto {
+  display: flex; align-items: center; gap: 9px;
+  margin-top: 12px; font-size: 13px; font-weight: 700;
+  cursor: pointer;
+}
+.set-lms-auto input { width: auto; flex: none; }
+
+.set-lms-help { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.set-lms-help summary {
+  font-size: 12.5px; font-weight: 700; color: var(--sub);
+  cursor: pointer; list-style: none;
+}
+.set-lms-help summary::-webkit-details-marker { display: none; }
+.set-lms-help summary::before { content: "▸ "; }
+.set-lms-help[open] summary::before { content: "▾ "; }
+.set-lms-steps {
+  margin: 10px 0 10px 18px; padding: 0;
+  font-size: 12.5px; color: var(--ink); line-height: 1.9;
+}
+.set-lms-steps li { margin: 0; }
+
+.set-semester-list { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
+.set-semester-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.set-semester-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+.set-periods-editor {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.set-period-row { display: flex; align-items: center; gap: 8px; }
+.set-period-row input[type="time"] { width: auto; flex: 1; }
+.set-period-add { align-self: flex-start; }
+
+.set-data-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.set-danger-zone { border-top: 1px solid var(--line); padding-top: 14px; }
+
+.set-usage-panel p { margin: 0; font-size: 13px; color: var(--sub); line-height: 1.7; }
+
+/* ---------- PC レイアウト ---------- */
+@media (min-width: 700px) {
+  .imp-body { max-width: 560px; }
+  .set-wrap { max-width: 640px; }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "コマドリ",
+  "short_name": "コマドリ",
+  "description": "写真1枚で時間割を自動作成。出欠・課題も管理できる軽量PWA。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F6F5F1",
+  "theme_color": "#F6F5F1",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" }
+  ]
+}
