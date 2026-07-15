@@ -4,8 +4,10 @@
  *   settings  { theme:'auto'|'light'|'dark', apiKey, model, attendanceUrl, activeSemesterId,
  *               lmsIcalUrl, lmsAutoSync, lmsLastSync }
  *   semesters [{ id, year, label, periods:[{no,start,end}] }]
- *   courses   [{ id, semesterId, name, room, instructor, memo, url, attendanceUrl, colorKey:1-8,
- *                absenceLimit, slots:[{day:0-6(0=月), period:1-8}] }]
+ *   courses   [{ id, semesterId, name, room, instructor, memo, url, attendanceUrl, lmsCode,
+ *                colorKey:1-8, absenceLimit, slots:[{day:0-6(0=月), period:1-8}] }]
+ *     lmsCode は LMS の科目コード(例 TKP528L26IAA)。LMSのカレンダーは科目名ではなく
+ *     このコードを返すため、課題をどの授業に紐付けるかの対応付けに使う。
  *     attendanceUrl は授業ごとの出席ページ(教科ごとにURLが違うため)。
  *     未設定なら settings.attendanceUrl(全体の既定)にフォールバックする。
  *   attendance[{ courseId, date:'YYYY-MM-DD', status:'present'|'absent'|'late' }]
@@ -147,6 +149,7 @@ KD.store = (() => {
       memo: obj.memo || "",
       url: obj.url || "",
       attendanceUrl: obj.attendanceUrl || "",
+      lmsCode: obj.lmsCode || "",
       colorKey: obj.colorKey || U.colorForName(obj.name || ""),
       absenceLimit: obj.absenceLimit ?? 5,
       slots: (obj.slots || []).map((s) => ({ day: s.day, period: s.period })),

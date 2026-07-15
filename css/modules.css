@@ -252,6 +252,21 @@
 }
 .set-lms-auto input { width: auto; flex: none; }
 
+/* 科目コードの対応付け */
+.set-code-box { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.set-code-head { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 4px; }
+.set-code-badge {
+  background: var(--warn-bg); color: var(--ink);
+  border-radius: 999px; padding: 1px 9px;
+  font-family: var(--font-mono); font-size: 10.5px;
+}
+.set-code-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 12px; }
+.set-code-row { display: flex; align-items: center; gap: 8px; }
+.set-code-name { flex: 1; min-width: 0; font-size: 11.5px; display: flex; flex-direction: column; gap: 1px; }
+.set-code-name .mono { font-size: 11px; }
+.set-code-sug { color: var(--sub); font-size: 10.5px; }
+.set-code-sel { flex: 1.1; padding: 6px 8px; font-size: 12.5px; }
+
 .set-lms-help { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
 .set-lms-help summary {
   font-size: 12.5px; font-weight: 700; color: var(--sub);

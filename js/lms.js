@@ -87,12 +87,52 @@ KD.lms = (() => {
     return events;
   }
 
-  /** Moodleの件名から締切表現の定型句を落とす(「◯◯ は締め切りです」等) */
+  /* ---------- イベントの分類 ----------
+   * この学校のLMSのカレンダーには、課題以外のイベントが大量に混ざる。
+   * 実データ(65件)の内訳:
+   *   「◯◯」の提出期限        → 課題(取り込む)
+   *   ◯◯ の受験可能期間の終了  → 小テストの締切(取り込む)
+   *   ◯◯ の受験可能期間の開始  → 開始通知(捨てる)
+   *   出欠 / 出席管理           → 出席イベント(捨てる。ただしコード対応付けに使う)
+   *   ◯◯ (アンケート開始/終了) → 授業アンケート(捨てる。件名が「12」等で意味を成さない)
+   * 締切だけを課題として取り込む。
+   */
+
+  /** @returns {{kind:'assignment'|'quiz'|'attendance'|'skip', title:string}} */
+  function classify(summary) {
+    const s = String(summary || "").trim();
+
+    // 出席系(課題ではないが、科目コードの対応付けに使う)
+    if (/^(出欠|出席管理|出席)$/.test(s)) return { kind: "attendance", title: s };
+
+    // 「◯◯」の提出期限 → 課題
+    let m = /^[「『](.+)[」』]\s*の提出期限$/u.exec(s);
+    if (m) return { kind: "assignment", title: m[1].trim() };
+
+    // 提出期限(かぎ括弧なし)の保険
+    m = /^(.+?)\s*の提出期限$/u.exec(s);
+    if (m) return { kind: "assignment", title: m[1].trim() };
+
+    // ◯◯ の受験可能期間の終了 → 小テスト締切
+    m = /^(.+?)\s*の受験可能期間の終了$/u.exec(s);
+    if (m) return { kind: "quiz", title: m[1].trim() };
+
+    // 開始通知・アンケートは捨てる
+    if (/の受験可能期間の開始$/u.test(s)) return { kind: "skip", title: s };
+    if (/[（(]アンケート(開始|終了)[)）]\s*$/u.test(s)) return { kind: "skip", title: s };
+
+    // 英語表記の保険
+    m = /^(.+?)\s+(?:is due|closes)$/i.exec(s);
+    if (m) return { kind: "assignment", title: m[1].trim() };
+    if (/\s+opens$/i.test(s)) return { kind: "skip", title: s };
+
+    // 判別できないものは課題として扱う(取りこぼすより出す)
+    return { kind: "assignment", title: s };
+  }
+
+  /** 後方互換 / テスト用: 件名から表示用タイトルを取り出す */
   function cleanTitle(summary) {
-    let t = String(summary || "").trim();
-    t = t.replace(/\s*(は締め切りです|が締め切られます|の締切|は終了しました)\s*$/u, "");
-    t = t.replace(/\s+(is due|closes|opens|due)\s*$/i, "");
-    return t.trim() || "無題の課題";
+    return classify(summary).title || "無題の課題";
   }
 
   /* ---------- 授業名の突き合わせ ---------- */
@@ -103,13 +143,17 @@ KD.lms = (() => {
       .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
       .toLowerCase();
 
-  /** LMSの科目名(例「2026年度 深層学習」)を、登録済み授業に緩く突き合わせる */
-  function matchCourseId(lmsCourseName) {
+  /** LMSのCATEGORIES(科目コード 例: TKP528L26IAA)から授業を引く。
+   *  対応付けは course.lmsCode。未設定なら名前でも一応試す(他校のLMSが名前を返す場合の保険)。 */
+  function matchCourseId(lmsCategory) {
     const sem = S.getActiveSemester();
-    if (!sem || !lmsCourseName) return null;
+    if (!sem || !lmsCategory) return null;
     const courses = S.coursesOf(sem.id);
-    const target = norm(lmsCourseName);
+    const target = norm(lmsCategory);
     if (!target) return null;
+
+    const byCode = courses.find((c) => c.lmsCode && norm(c.lmsCode) === target);
+    if (byCode) return byCode.id;
 
     const exact = courses.find((c) => norm(c.name) === target);
     if (exact) return exact.id;
@@ -121,6 +165,67 @@ KD.lms = (() => {
       })
       .sort((a, b) => norm(b.name).length - norm(a.name).length);
     return candidates.length ? candidates[0].id : null;
+  }
+
+  /* ---------- 科目コード → 時間割のコマ の推定 ----------
+   * 「出欠」「出席管理」イベントは授業時間中に置かれるので、その時刻から
+   * (曜日, 時限) が分かる。これで科目コードを時間割のコマに結びつけられる。
+   */
+  const SLOT_TOLERANCE_MIN = 20; // 出席受付が数分早く始まることがあるので前方に余裕を持たせる
+
+  /** @returns {Array<{code, day, period, count}>} 出席イベントから推定したコマ */
+  function inferCodeSlots(events, sem) {
+    const semester = sem || S.getActiveSemester();
+    if (!semester) return [];
+    const periods = semester.periods || [];
+    const tally = new Map(); // `${code}|${day}|${period}` → count
+
+    events.forEach((ev) => {
+      if (!ev.categories || !ev.dtstart || isNaN(ev.dtstart)) return;
+      if (classify(ev.summary).kind !== "attendance") return;
+
+      const d = ev.dtstart;
+      const day = (d.getDay() + 6) % 7; // 0=月
+      const mins = d.getHours() * 60 + d.getMinutes();
+
+      const hit = periods.find((p) => {
+        const st = U.parseTime(p.start), en = U.parseTime(p.end);
+        if (st == null || en == null) return false;
+        return mins >= st - SLOT_TOLERANCE_MIN && mins <= en;
+      });
+      if (!hit) return;
+
+      const key = `${ev.categories}|${day}|${hit.no}`;
+      tally.set(key, (tally.get(key) || 0) + 1);
+    });
+
+    return [...tally.entries()].map(([key, count]) => {
+      const [code, day, period] = key.split("|");
+      return { code, day: +day, period: +period, count };
+    });
+  }
+
+  /** フィード内の科目コード一覧と、時間割から推定した対応候補を返す(設定画面用) */
+  function analyzeCodes(events) {
+    const sem = S.getActiveSemester();
+    const slots = inferCodeSlots(events, sem);
+    const codes = [...new Set(events.map((e) => e.categories).filter(Boolean))];
+
+    return codes.map((code) => {
+      const courses = sem ? S.coursesOf(sem.id) : [];
+      const mapped = courses.find((c) => c.lmsCode && norm(c.lmsCode) === norm(code));
+
+      // このコードの出席イベントが指すコマ(出現回数の多い順)
+      const mine = slots.filter((s) => s.code === code).sort((a, b) => b.count - a.count);
+      let suggestion = null;
+      for (const s of mine) {
+        const c = courses.find((co) =>
+          (co.slots || []).some((sl) => sl.day === s.day && sl.period === s.period)
+        );
+        if (c) { suggestion = { courseId: c.id, courseName: c.name, day: s.day, period: s.period }; break; }
+      }
+      return { code, mappedCourseId: mapped ? mapped.id : null, suggestion, slots: mine };
+    });
   }
 
   /* ---------- 取得 ---------- */
@@ -149,11 +254,29 @@ KD.lms = (() => {
     return data.ical;
   }
 
-  /** 接続テスト: 取得できたイベント数を返す */
+  /** 接続テスト: 取得できたイベント数と科目コードの状況を返す */
   async function test(url) {
     const ical = await fetchIcal(url || S.getSettings().lmsIcalUrl);
     const events = parseIcal(ical);
-    return { total: events.length, upcoming: toAssignments(events).length };
+    lastEvents = events;
+    const codes = analyzeCodes(events);
+    return {
+      total: events.length,
+      upcoming: toAssignments(events).length,
+      codes: codes.length,
+      unmapped: codes.filter((c) => !c.mappedCourseId).length,
+    };
+  }
+
+  /** 直近の同期で取得したイベント(設定画面のコード対応付けで使う) */
+  let lastEvents = null;
+  const getLastCodes = () => (lastEvents ? analyzeCodes(lastEvents) : null);
+
+  /** 設定画面から呼ぶ: フィードを取り直して科目コードを解析 */
+  async function loadCodes() {
+    const ical = await fetchIcal(S.getSettings().lmsIcalUrl);
+    lastEvents = parseIcal(ical);
+    return analyzeCodes(lastEvents);
   }
 
   /* ---------- VEVENT → 課題 ---------- */
@@ -169,15 +292,23 @@ KD.lms = (() => {
         const t = ev.dtstart.getTime();
         if (t < from || t > to) return null;
 
+        // 出席イベント・開始通知・アンケートは課題ではないので取り込まない
+        const { kind, title } = classify(ev.summary);
+        if (kind === "attendance" || kind === "skip") return null;
+
         const d = ev.dtstart;
-        const courseName = (ev.categories || "").trim();
+        const code = (ev.categories || "").trim();
+        const courseId = matchCourseId(code);
+        // コード未対応なら、せめてコードを表示しておく(設定画面で対応付けできる)
+        const course = courseId ? S.getCourse(courseId) : null;
+
         return {
           lmsId: ev.uid,
-          title: cleanTitle(ev.summary),
+          title: (kind === "quiz" ? `${title}(小テスト)` : title) || "無題の課題",
           due: U.todayISO(d),
           dueTime: d.__dateOnly ? null : `${U.pad(d.getHours())}:${U.pad(d.getMinutes())}`,
-          courseName,
-          courseId: matchCourseId(courseName),
+          courseName: course ? course.name : code,
+          courseId,
           url: "",
         };
       })
@@ -193,8 +324,9 @@ KD.lms = (() => {
     syncing = true;
     try {
       const ical = await fetchIcal(url);
-      const list = toAssignments(parseIcal(ical));
-      return S.upsertLmsAssignments(list);
+      const events = parseIcal(ical);
+      lastEvents = events;
+      return S.upsertLmsAssignments(toAssignments(events));
     } finally {
       syncing = false;
     }
@@ -220,5 +352,9 @@ KD.lms = (() => {
 
   const isConfigured = () => !!S.getSettings().lmsIcalUrl;
 
-  return { test, sync, autoSync, isConfigured, matchCourseId, parseIcal, toAssignments, cleanTitle };
+  return {
+    test, sync, autoSync, isConfigured, matchCourseId,
+    parseIcal, toAssignments, cleanTitle, classify,
+    analyzeCodes, inferCodeSlots, loadCodes, getLastCodes,
+  };
 })();

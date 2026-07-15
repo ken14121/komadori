@@ -144,6 +144,11 @@
         <input id="ci-att-url" type="url" value="${esc(c.attendanceUrl || "")}" placeholder="https://">
         <p class="hint">この授業の出席ページ。ヘッダーの[出席アプリ]は、進行中の授業のこのURLを開きます。</p>
       </div>
+      <div class="field">
+        <label>LMS科目コード</label>
+        <input id="ci-lms-code" value="${esc(c.lmsCode || "")}" placeholder="例: TKP528L26IAA">
+        <p class="hint">LMSの課題をこの授業に紐付けるコード。設定→LMS連携から一括で対応付けもできます。</p>
+      </div>
       <div class="field"><label>色</label>${swatchesHtml(c.colorKey || 8)}</div>
       <div class="field slot-editor" id="ci-slots"><label>コマ</label>
         <div class="slot-list">${slots}</div>
@@ -177,6 +182,7 @@
         memo: document.getElementById("ci-memo").value.trim(),
         url: document.getElementById("ci-url").value.trim(),
         attendanceUrl: document.getElementById("ci-att-url").value.trim(),
+        lmsCode: document.getElementById("ci-lms-code").value.trim(),
         colorKey,
         slots: collectSlots(root.querySelector("#ci-slots")),
       });

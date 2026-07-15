@@ -78,6 +78,7 @@ KD.settings = (() => {
           <input type="checkbox" id="set-lms-auto" ${st.lmsAutoSync !== false ? "checked" : ""}>
           <span>アプリを開いたときに自動で取り込む</span>
         </label>
+        ${panelLmsCodes()}
         <details class="set-lms-help">
           <summary>カレンダーURLの取得方法</summary>
           <ol class="set-lms-steps">
@@ -93,7 +94,91 @@ KD.settings = (() => {
     `;
   }
 
+  /* --- 科目コードの対応付け ---
+   * LMSのカレンダーは科目名ではなくコード(TKP528L26IAA等)を返すので、
+   * どのコードがどの授業かを教える必要がある。
+   * 「出欠」イベントの時刻から時間割のコマを逆算して候補を提案する。
+   */
+  function panelLmsCodes() {
+    const codes = KD.lms?.getLastCodes?.();
+    if (!codes) {
+      return `
+        <div class="set-code-box">
+          <button class="btn btn-ghost btn-sm" id="set-lms-loadcodes" type="button">科目コードを対応付ける</button>
+        </div>`;
+    }
+    if (!codes.length) return "";
+
+    const sem = S.getActiveSemester();
+    const courses = sem ? S.coursesOf(sem.id) : [];
+    const unmapped = codes.filter((c) => !c.mappedCourseId).length;
+
+    const rows = codes.map((c) => {
+      const opts = [`<option value="">— 未設定 —</option>`]
+        .concat(courses.map((co) => {
+          const sel = c.mappedCourseId === co.id ? " selected"
+            : (!c.mappedCourseId && c.suggestion && c.suggestion.courseId === co.id ? " selected" : "");
+          return `<option value="${co.id}"${sel}>${U.escapeHtml(co.name)}</option>`;
+        }))
+        .join("");
+      const hint = c.suggestion && !c.mappedCourseId
+        ? `<span class="set-code-sug">候補: ${U.escapeHtml(U.DAYS[c.suggestion.day])}${c.suggestion.period}限</span>`
+        : "";
+      return `
+        <div class="set-code-row">
+          <div class="set-code-name"><span class="mono">${U.escapeHtml(c.code)}</span>${hint}</div>
+          <select class="set-code-sel" data-code="${U.escapeHtml(c.code)}">${opts}</select>
+        </div>`;
+    }).join("");
+
+    return `
+      <div class="set-code-box">
+        <div class="set-code-head">
+          <strong>科目コードの対応付け</strong>
+          ${unmapped ? `<span class="set-code-badge">${unmapped}件 未設定</span>` : `<span class="hint">すべて設定済み</span>`}
+        </div>
+        <p class="hint">LMSは科目名ではなくコードを返します。どの授業か教えると、課題が正しい授業に紐付きます。</p>
+        <div class="set-code-list">${rows}</div>
+        <button class="btn btn-secondary btn-sm" id="set-lms-savecodes" type="button">対応付けを保存</button>
+      </div>`;
+  }
+
+  function bindLmsCodes() {
+    document.getElementById("set-lms-loadcodes")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      lmsStatus = { kind: "ok", text: "科目コードを読み込み中…" };
+      render();
+      try {
+        await KD.lms.loadCodes();
+        lmsStatus = null;
+      } catch (err) {
+        lmsStatus = { kind: "err", text: friendlyLmsError(err) };
+      }
+      render();
+    });
+
+    document.getElementById("set-lms-savecodes")?.addEventListener("click", () => {
+      const sem = S.getActiveSemester();
+      if (!sem) return;
+      // いったん全授業のコードを外してから、選ばれたものだけ付け直す(重複防止)
+      const picks = [...document.querySelectorAll(".set-code-sel")]
+        .map((el) => ({ code: el.dataset.code, courseId: el.value }))
+        .filter((p) => p.courseId);
+      const touched = new Set(picks.map((p) => p.courseId));
+      S.coursesOf(sem.id).forEach((c) => {
+        if (c.lmsCode && !picks.some((p) => p.courseId === c.id)) S.updateCourse(c.id, { lmsCode: "" });
+      });
+      picks.forEach((p) => S.updateCourse(p.courseId, { lmsCode: p.code }));
+
+      U.toast(`${touched.size}件の授業にコードを設定しました`);
+      // 既存のLMS課題を新しい対応付けで紐付け直す
+      KD.lms.sync().catch(() => {});
+      render();
+    });
+  }
+
   function bindLms() {
+    bindLmsCodes();
     const urlEl = document.getElementById("set-lms-url");
     urlEl?.addEventListener("blur", () => {
       S.updateSettings({ lmsIcalUrl: urlEl.value.trim() });
@@ -119,7 +204,8 @@ KD.settings = (() => {
         const info = await KD.lms.test();
         lmsStatus = {
           kind: "ok",
-          text: `接続成功: 予定${info.total}件を取得(うち課題として取り込む対象 ${info.upcoming}件)`,
+          text: `接続成功: 予定${info.total}件から課題${info.upcoming}件を検出`
+            + (info.unmapped ? ` / 科目コード${info.unmapped}件が未対応付け(下で設定できます)` : ""),
         };
       } catch (err) {
         lmsStatus = { kind: "err", text: friendlyLmsError(err) };
