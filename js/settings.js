@@ -325,6 +325,7 @@ KD.settings = (() => {
           <input type="text" id="set-attendance-url" placeholder="https://..." value="${U.escapeHtml(st.attendanceUrl || "")}">
         </div>
         <button class="btn btn-secondary btn-sm" id="set-att-bulk" type="button">出席URLをまとめて貼り付け</button>
+        ${panelAutoOpen(st)}
         <p class="hint">
           ヘッダーの[出席アプリ]は<strong>進行中の授業の出席ページ</strong>を開きます。
           教科ごとのURLは、時間割で授業をタップ →「基本情報」→<strong>出席ページURL</strong> でも設定できます。
@@ -341,6 +342,64 @@ KD.settings = (() => {
       U.toast("保存しました");
     });
     document.getElementById("set-att-bulk")?.addEventListener("click", openAttBulkSheet);
+    bindAutoOpen();
+  }
+
+  /* ---------- 出席ページの自動オープン ---------- */
+
+  function panelAutoOpen(st) {
+    const on = !!st.autoOpenAttendance;
+    const min = Number(st.autoOpenMinutes) || 6;
+    const canNotify = "Notification" in window;
+    const perm = canNotify ? Notification.permission : "unsupported";
+    return `
+      <div class="set-auto-box">
+        <label class="set-lms-auto">
+          <input type="checkbox" id="set-auto-open" ${on ? "checked" : ""}>
+          <span>授業前に出席ページを自動で開く</span>
+        </label>
+        ${on ? `
+          <div class="set-auto-row">
+            <span class="hint">開始の</span>
+            <input type="number" min="1" max="30" inputmode="numeric" class="mono" id="set-auto-min" value="${min}">
+            <span class="hint">分前に開く</span>
+          </div>
+          <p class="hint">
+            <strong>コマドリのタブを開いたままにしてください</strong>(閉じていると動きません)。
+            パソコン向けの機能です。
+          </p>
+          ${perm === "granted" ? `<p class="hint">通知は許可済みです。ポップアップがブロックされた場合は通知から開けます。</p>`
+            : perm === "denied" ? `<p class="hint">通知はブロックされています。自動で開けなかった場合は画面下のバナーから開いてください。</p>`
+            : canNotify ? `<button class="btn btn-secondary btn-sm" id="set-auto-notify" type="button">通知を許可する(推奨)</button>
+                 <p class="hint">ブラウザが自動オープンを止めた場合の保険になります。</p>`
+            : ""}
+        ` : `<p class="hint">授業が始まる少し前に、その授業の出席ページを自動で開きます。</p>`}
+      </div>`;
+  }
+
+  function bindAutoOpen() {
+    document.getElementById("set-auto-open")?.addEventListener("change", (e) => {
+      S.updateSettings({ autoOpenAttendance: e.target.checked });
+      KD.startAutoOpen?.();
+      U.toast(e.target.checked ? "自動オープンをONにしました" : "自動オープンをOFFにしました");
+      render();
+    });
+    const minEl = document.getElementById("set-auto-min");
+    minEl?.addEventListener("change", () => {
+      const n = Math.min(30, Math.max(1, Number(minEl.value) || 6));
+      S.updateSettings({ autoOpenMinutes: n });
+      U.toast(`${n}分前に開きます`);
+      render();
+    });
+    document.getElementById("set-auto-notify")?.addEventListener("click", async () => {
+      try {
+        const p = await Notification.requestPermission();
+        U.toast(p === "granted" ? "通知を許可しました" : "通知は許可されませんでした");
+      } catch (e) {
+        U.toast("この環境では通知を使えません");
+      }
+      render();
+    });
   }
 
   /* ---------- 出席URLの一括貼り付け ----------

@@ -248,6 +248,32 @@
 .ab-row.is-miss .ab-out { color: var(--danger); font-weight: 500; }
 #ab-text { font-size: 12px; line-height: 1.6; }
 
+/* 出席ページの自動オープン */
+.set-auto-box { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.set-auto-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+.set-auto-row input { width: 64px; text-align: center; }
+.set-auto-row .hint { margin: 0; }
+
+/* ポップアップがブロックされた時のバナー */
+#auto-banner {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + 14px + env(safe-area-inset-bottom));
+  z-index: 90; width: calc(100% - 32px); max-width: 460px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--accent); color: var(--accent-fg);
+  border-radius: var(--radius); padding: 11px 12px;
+  box-shadow: var(--shadow);
+}
+#auto-banner .ab-msg { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.4; }
+#auto-banner .ab-msg strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#auto-banner .ab-msg span { font-size: 11px; opacity: .8; }
+#auto-banner .ab-go {
+  flex: none; font-size: 12px; font-weight: 800;
+  background: var(--accent-fg); color: var(--accent);
+  border-radius: 999px; padding: 7px 12px;
+}
+#auto-banner .ab-x { flex: none; font-size: 17px; opacity: .7; padding: 0 4px; }
+
 /* 欠席上限 */
 .set-abs-row { display: flex; align-items: flex-end; gap: 10px; }
 .set-abs-row .field { flex: 0 0 108px; }

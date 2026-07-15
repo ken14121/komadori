@@ -2,7 +2,10 @@
  *
  * データモデル:
  *   settings  { theme:'auto'|'light'|'dark', apiKey, model, attendanceUrl, activeSemesterId,
- *               lmsIcalUrl, lmsAutoSync, lmsLastSync, absenceLimitDefault }
+ *               lmsIcalUrl, lmsAutoSync, lmsLastSync, absenceLimitDefault,
+ *               autoOpenAttendance, autoOpenMinutes, autoOpenLog }
+ *     autoOpenLog は「その日そのコマを開いたか」の記録。二重に開かないためのもので、
+ *     日付が変わったら捨てる。
  *   semesters [{ id, year, label, periods:[{no,start,end}] }]
  *   courses   [{ id, semesterId, name, room, instructor, memo, url, attendanceUrl, lmsCode,
  *                colorKey:1-8, absenceLimit, slots:[{day:0-6(0=月), period:1-8}] }]
@@ -42,6 +45,9 @@ KD.store = (() => {
       lmsAutoSync: true,
       lmsLastSync: null,
       absenceLimitDefault: 3,
+      autoOpenAttendance: false,
+      autoOpenMinutes: 6,
+      autoOpenLog: {},
     },
     semesters: [],
     courses: [],
@@ -196,6 +202,25 @@ KD.store = (() => {
 
   const absenceCount = (courseId) =>
     state.attendance.filter((a) => a.courseId === courseId && a.status === "absent").length;
+
+  /* ---------- 出席ページの自動オープン記録 ----------
+   * 同じコマを何度も開かないための記録。当日ぶんだけ持てばよいので、
+   * 読むたびに古い日付のものを捨てる。
+   */
+  function wasAutoOpened(key) {
+    return !!state.settings.autoOpenLog?.[key];
+  }
+
+  function markAutoOpened(key) {
+    const today = U.todayISO();
+    const log = state.settings.autoOpenLog || {};
+    const next = {};
+    // 当日ぶんだけ残す(キーは "YYYY-MM-DD|courseId|period")
+    Object.keys(log).forEach((k) => { if (k.startsWith(today + "|")) next[k] = log[k]; });
+    next[key] = Date.now();
+    state.settings.autoOpenLog = next;
+    commit();
+  }
 
   /** 欠席上限の既定値(新しい授業に使う) */
   function defaultAbsenceLimit() {
@@ -377,6 +402,7 @@ KD.store = (() => {
     coursesOf, getCourse, courseAt, addCourse, updateCourse, deleteCourse,
     attendanceOf, getAttendance, setAttendance, absenceCount,
     defaultAbsenceLimit, applyAbsenceLimitToAll,
+    wasAutoOpened, markAutoOpened,
     listAssignments, assignmentsOf, getAssignment, pendingCount, pendingTotal,
     addAssignment, updateAssignment, deleteAssignment, upsertLmsAssignments,
     applyImport, loadSample,

@@ -203,6 +203,89 @@
     openAttendancePicker(slots);
   }
 
+  /* ---------- 出席ページの自動オープン(パソコン向け) ----------
+   * 授業開始の N 分前になったら出席ページを自動で開く。
+   *
+   * ブラウザの制約:
+   *   - タイマーからの window.open はユーザー操作起因でないためポップアップブロックの
+   *     対象になる。ブロックされた場合は null が返るので、その時はバナー(と通知)を出して
+   *     クリック=ユーザー操作で開けるようにする。
+   *   - タブが閉じているとタイマーは動かない。サーバーを持たない構成なので、
+   *     コマドリを開いたままにしてもらう前提。
+   */
+  const AUTO_CHECK_MS = 20_000;
+  const AUTO_GRACE_MIN = 5; // 開始後この分数までは開く(遅れて開いた時のため)
+  let autoTimer = null;
+
+  function autoOpenCheck() {
+    const st = S.getSettings();
+    if (!st.autoOpenAttendance) return;
+
+    const lead = Number(st.autoOpenMinutes) || 6;
+    const now = U.nowMinutes();
+    const today = U.todayISO();
+
+    for (const s of todaySlots()) {
+      if (s.start == null) continue;
+      const diff = s.start - now; // 正=開始前
+      if (diff > lead || diff < -AUTO_GRACE_MIN) continue;
+
+      const key = `${today}|${s.course.id}|${s.period}`;
+      if (S.wasAutoOpened(key)) continue;
+
+      const url = attUrlFor(s.course);
+      if (!url) continue;
+
+      S.markAutoOpened(key); // 先に記録(開けても開けなくても再試行しない)
+      const w = window.open(url, "_blank", "noopener");
+      if (w) {
+        U.toast(`${s.course.name} の出席ページを開きました`);
+      } else {
+        // ポップアップがブロックされた → クリックで開ける導線を出す
+        showAutoBanner(s.course, url, diff);
+        notifyAttendance(s.course, url);
+      }
+      break; // 1回に1コマだけ
+    }
+  }
+
+  function showAutoBanner(course, url, diff) {
+    document.getElementById("auto-banner")?.remove();
+    const el = document.createElement("div");
+    el.id = "auto-banner";
+    el.innerHTML = `
+      <div class="ab-msg">
+        <strong>${U.escapeHtml(course.name)}</strong>
+        <span>${diff > 0 ? `まもなく開始(${diff}分後)` : "開始しました"}</span>
+      </div>
+      <button class="ab-go" type="button">出席ページを開く ↗</button>
+      <button class="ab-x" type="button" aria-label="閉じる">×</button>`;
+    document.getElementById("app").appendChild(el);
+    el.querySelector(".ab-go").addEventListener("click", () => {
+      window.open(url, "_blank", "noopener");
+      el.remove();
+    });
+    el.querySelector(".ab-x").addEventListener("click", () => el.remove());
+  }
+
+  function notifyAttendance(course, url) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      const n = new Notification("出席の時間です", {
+        body: `${course.name} の出席ページを開く`,
+        tag: "komadori-attendance",
+      });
+      n.onclick = () => { window.open(url, "_blank", "noopener"); n.close(); };
+    } catch (e) { /* 通知が使えない環境では黙って諦める */ }
+  }
+
+  function startAutoOpen() {
+    clearInterval(autoTimer);
+    autoTimer = setInterval(autoOpenCheck, AUTO_CHECK_MS);
+    autoOpenCheck();
+  }
+  KD.startAutoOpen = startAutoOpen;
+
   function openAttendancePicker(slots) {
     const items = slots.map((s) => {
       const url = attUrlFor(s.course);
@@ -264,6 +347,9 @@
 
     // LMSから課題を自動取り込み(トークン未設定・中継サーバー無しなら静かに何もしない)
     KD.lms?.autoSync?.();
+
+    // 出席ページの自動オープン(設定でONのときだけ動く)
+    startAutoOpen();
 
     // 進行中表示を1分ごとに更新
     setInterval(() => { if (activeView === "timetable") { renderHeader(); KD.grid?.tick?.(); } }, 60_000);
