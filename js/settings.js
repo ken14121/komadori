@@ -701,13 +701,159 @@ KD.settings = (() => {
     render();
   }
 
+  /* ---------- 端末間の引っ越しコード ----------
+   * データは端末ごとの localStorage にあるので、スマホ↔PC は自動では揃わない。
+   * 全データを gzip して1つの文字列にし、コピペで移せるようにする。
+   * (サーバーを持たない構成なので、これが一番手軽で確実)
+   */
+  const CODE_PREFIX_GZIP = "KMDR1G:";
+  const CODE_PREFIX_PLAIN = "KMDR1P:";
+
+  /** Uint8Array → base64(大きい配列でも落ちないよう分割して変換) */
+  function bytesToB64(bytes) {
+    let s = "";
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(s);
+  }
+
+  function b64ToBytes(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function makeCode() {
+    const json = S.exportJSON();
+    // CompressionStream が無い環境ではそのまま base64(長くなるが動く)
+    if (typeof CompressionStream === "undefined") {
+      return CODE_PREFIX_PLAIN + bytesToB64(new TextEncoder().encode(json));
+    }
+    const stream = new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"));
+    const buf = await new Response(stream).arrayBuffer();
+    return CODE_PREFIX_GZIP + bytesToB64(new Uint8Array(buf));
+  }
+
+  async function readCode(code) {
+    const s = String(code || "").trim().replace(/\s+/g, "");
+    if (s.startsWith(CODE_PREFIX_PLAIN)) {
+      return new TextDecoder().decode(b64ToBytes(s.slice(CODE_PREFIX_PLAIN.length)));
+    }
+    if (s.startsWith(CODE_PREFIX_GZIP)) {
+      if (typeof DecompressionStream === "undefined") throw new Error("この端末では展開できません");
+      const bytes = b64ToBytes(s.slice(CODE_PREFIX_GZIP.length));
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+      return await new Response(stream).text();
+    }
+    throw new Error("コードの形式が違います");
+  }
+
+  function openTransferSheet(mode) {
+    if (mode === "out") {
+      KD.sheet.open(`
+        <div class="sheet-head"><h2>この端末のデータを渡す</h2></div>
+        <p class="hint" style="margin-bottom:8px">
+          下のコードをコピーして、LINEやメモで<strong>もう一方の端末に送って</strong>ください。
+          受け取った側で「コードで受け取る」に貼り付けます。
+        </p>
+        <div class="field"><textarea id="tf-out" rows="5" readonly>生成中…</textarea></div>
+        <p class="hint" id="tf-size"></p>
+        <div class="sheet-actions">
+          <button class="btn btn-primary" id="tf-copy">コードをコピー</button>
+        </div>
+      `);
+      makeCode().then((code) => {
+        const ta = document.getElementById("tf-out");
+        if (!ta) return;
+        ta.value = code;
+        const sem = S.listSemesters().length;
+        const courses = S.listSemesters().reduce((n, s) => n + S.coursesOf(s.id).length, 0);
+        document.getElementById("tf-size").textContent =
+          `学期${sem}件・授業${courses}件・課題${S.listAssignments().length}件 / ${(code.length / 1024).toFixed(1)}KB`;
+      }).catch((e) => {
+        const ta = document.getElementById("tf-out");
+        if (ta) ta.value = "生成に失敗しました: " + e.message;
+      });
+
+      document.getElementById("tf-copy").addEventListener("click", async () => {
+        const ta = document.getElementById("tf-out");
+        try {
+          await navigator.clipboard.writeText(ta.value);
+          U.toast("コードをコピーしました");
+        } catch (e) {
+          ta.select(); // クリップボードAPIが使えない時は手動選択に任せる
+          U.toast("長押しでコピーしてください");
+        }
+      });
+      return;
+    }
+
+    KD.sheet.open(`
+      <div class="sheet-head"><h2>コードで受け取る</h2></div>
+      <p class="hint" style="margin-bottom:8px">
+        もう一方の端末で出したコードを貼り付けてください。
+        <strong>この端末のデータは置き換わります。</strong>
+      </p>
+      <div class="field"><textarea id="tf-in" rows="5" placeholder="KMDR1G:..."></textarea></div>
+      <div class="sheet-actions">
+        <button class="btn btn-primary" id="tf-apply">読み込む</button>
+      </div>
+    `);
+
+    document.getElementById("tf-apply").addEventListener("click", async () => {
+      const code = document.getElementById("tf-in").value;
+      if (!code.trim()) { U.toast("コードを貼り付けてください"); return; }
+      let json;
+      try {
+        json = await readCode(code);
+      } catch (e) {
+        U.toast("読み込めませんでした: " + e.message);
+        return;
+      }
+      // 中身の確認 → 件数を見せてから置き換える
+      let peek;
+      try {
+        peek = JSON.parse(json);
+        if (!peek || !Array.isArray(peek.semesters)) throw new Error("形式が不正です");
+      } catch (e) {
+        U.toast("コードの中身が壊れています");
+        return;
+      }
+      const courses = (peek.courses || []).length;
+      const msg = `学期${peek.semesters.length}件・授業${courses}件・課題${(peek.assignments || []).length}件 を読み込みます。\n\n`
+        + `この端末の今のデータは置き換わります。よろしいですか?`;
+      if (!window.confirm(msg)) return;
+      try {
+        S.importJSON(json);
+        U.toast("データを読み込みました");
+        KD.sheet.close();
+        KD.applyTheme?.();
+        render();
+      } catch (e) {
+        U.toast("読み込みに失敗しました: " + e.message);
+      }
+    });
+  }
+
   /* ---------- データ ---------- */
 
   function panelData() {
     return `
       <div class="panel set-panel">
         <div class="set-title">データ</div>
-        <div class="set-data-actions">
+        <div class="set-transfer">
+          <p class="hint" style="margin-bottom:8px">
+            データは端末ごとに保存されます。スマホ↔パソコンで揃えるにはコードで移してください。
+          </p>
+          <div class="set-data-actions">
+            <button class="btn btn-primary btn-sm" id="set-tf-out" type="button">コードを出す(渡す側)</button>
+            <button class="btn btn-secondary btn-sm" id="set-tf-in" type="button">コードで受け取る</button>
+          </div>
+        </div>
+        <div class="set-data-actions" style="border-top:1px solid var(--line); padding-top:14px">
           <button class="btn btn-secondary btn-sm" id="set-export" type="button">JSONエクスポート</button>
           <label class="btn btn-secondary btn-sm" id="set-import-label">
             JSONインポート
@@ -722,6 +868,9 @@ KD.settings = (() => {
   }
 
   function bindData() {
+    document.getElementById("set-tf-out")?.addEventListener("click", () => openTransferSheet("out"));
+    document.getElementById("set-tf-in")?.addEventListener("click", () => openTransferSheet("in"));
+
     document.getElementById("set-export")?.addEventListener("click", () => {
       const json = S.exportJSON();
       const blob = new Blob([json], { type: "application/json" });

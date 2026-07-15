@@ -248,6 +248,17 @@
 .ab-row.is-miss .ab-out { color: var(--danger); font-weight: 500; }
 #ab-text { font-size: 12px; line-height: 1.6; }
 
+/* 端末間の引っ越しコード */
+.set-transfer { margin-bottom: 14px; }
+#tf-out, #tf-in {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  word-break: break-all;
+  resize: vertical;
+}
+#tf-out { color: var(--sub); }
+
 /* 出席ページの自動オープン */
 .set-auto-box { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
 .set-auto-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
