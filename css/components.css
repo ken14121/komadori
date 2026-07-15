@@ -331,6 +331,10 @@
 .att-btn.att-absent.is-on { border-color: var(--danger); color: var(--danger); }
 :root[data-theme="dark"] .att-btn.is-on:not(.att-absent) { color: var(--accent); }
 
+/* 出席ページを開くボタン */
+.att-open-row { margin: 10px 0; }
+.att-open-row .att-open { width: 100%; }
+
 .att-counter {
   display: flex;
   align-items: center;

@@ -139,6 +139,11 @@
       </div>
       <div class="field"><label>メモ</label><textarea id="ci-memo" rows="2">${esc(c.memo)}</textarea></div>
       <div class="field"><label>シラバスURL</label><input id="ci-url" type="url" value="${esc(c.url)}" placeholder="https://"></div>
+      <div class="field">
+        <label>出席ページURL</label>
+        <input id="ci-att-url" type="url" value="${esc(c.attendanceUrl || "")}" placeholder="https://">
+        <p class="hint">この授業の出席ページ。ヘッダーの[出席アプリ]は、進行中の授業のこのURLを開きます。</p>
+      </div>
       <div class="field"><label>色</label>${swatchesHtml(c.colorKey || 8)}</div>
       <div class="field slot-editor" id="ci-slots"><label>コマ</label>
         <div class="slot-list">${slots}</div>
@@ -171,6 +176,7 @@
         instructor: document.getElementById("ci-inst").value.trim(),
         memo: document.getElementById("ci-memo").value.trim(),
         url: document.getElementById("ci-url").value.trim(),
+        attendanceUrl: document.getElementById("ci-att-url").value.trim(),
         colorKey,
         slots: collectSlots(root.querySelector("#ci-slots")),
       });
@@ -207,9 +213,16 @@
       </button>`
     ).join("");
 
+    // この授業の出席ページ(未設定なら全体の既定にフォールバック)
+    const attUrl = (c.attendanceUrl || "").trim() || (S.getSettings().attendanceUrl || "").trim();
+    const openBtn = attUrl
+      ? `<button class="btn btn-secondary btn-sm att-open" id="att-open">出席ページを開く ↗</button>`
+      : `<p class="hint">出席ページURLは「基本情報」タブで設定できます。</p>`;
+
     return `
       <p class="att-today mono">${U.fmtDateDow(today)} の出欠</p>
       <div class="att-row">${btns}</div>
+      <div class="att-open-row">${openBtn}</div>
       <div class="att-counter ${lv}">
         <span>欠席 <strong class="mono">${absent}</strong> / 上限</span>
         <input id="att-limit" type="number" min="0" max="99" value="${limit}" inputmode="numeric">
@@ -222,6 +235,10 @@
 
   function bindAttTab(c) {
     const today = U.todayISO();
+    document.getElementById("att-open")?.addEventListener("click", () => {
+      const url = (c.attendanceUrl || "").trim() || (S.getSettings().attendanceUrl || "").trim();
+      if (url) window.open(url, "_blank", "noopener");
+    });
     document.querySelectorAll("#sheet [data-att]").forEach((b) =>
       b.addEventListener("click", () => {
         const cur = S.getAttendance(c.id, today);

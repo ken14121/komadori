@@ -186,10 +186,14 @@ KD.settings = (() => {
       <div class="panel set-panel">
         <div class="set-title">出席アプリ</div>
         <div class="field">
-          <label>出席アプリのURL</label>
+          <label>共通の出席URL(任意)</label>
           <input type="text" id="set-attendance-url" placeholder="https://..." value="${U.escapeHtml(st.attendanceUrl || "")}">
         </div>
-        <p class="hint">ヘッダーの[出席アプリ]ボタンでこのURLを開きます。</p>
+        <p class="hint">
+          ヘッダーの[出席アプリ]は<strong>進行中の授業の出席ページ</strong>を開きます。
+          教科ごとのURLは、時間割で授業をタップ →「基本情報」→<strong>出席ページURL</strong> で設定してください。
+          ここは、その授業に個別のURLが無いときに使う共通のURLです。
+        </p>
       </div>
     `;
   }

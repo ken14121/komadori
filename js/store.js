@@ -4,8 +4,10 @@
  *   settings  { theme:'auto'|'light'|'dark', apiKey, model, attendanceUrl, activeSemesterId,
  *               lmsIcalUrl, lmsAutoSync, lmsLastSync }
  *   semesters [{ id, year, label, periods:[{no,start,end}] }]
- *   courses   [{ id, semesterId, name, room, instructor, memo, url, colorKey:1-8,
+ *   courses   [{ id, semesterId, name, room, instructor, memo, url, attendanceUrl, colorKey:1-8,
  *                absenceLimit, slots:[{day:0-6(0=月), period:1-8}] }]
+ *     attendanceUrl は授業ごとの出席ページ(教科ごとにURLが違うため)。
+ *     未設定なら settings.attendanceUrl(全体の既定)にフォールバックする。
  *   attendance[{ courseId, date:'YYYY-MM-DD', status:'present'|'absent'|'late' }]
  *   assignments[{ id, courseId|null, courseName, title, due:'YYYY-MM-DD', dueTime:'HH:MM'|null,
  *                 note, done:false, lmsId:string|null, url:'' }]
@@ -144,6 +146,7 @@ KD.store = (() => {
       instructor: obj.instructor || "",
       memo: obj.memo || "",
       url: obj.url || "",
+      attendanceUrl: obj.attendanceUrl || "",
       colorKey: obj.colorKey || U.colorForName(obj.name || ""),
       absenceLimit: obj.absenceLimit ?? 5,
       slots: (obj.slots || []).map((s) => ({ day: s.day, period: s.period })),

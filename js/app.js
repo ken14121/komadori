@@ -134,15 +134,104 @@
     });
   }
 
-  /* ---------- 出席アプリ ---------- */
+  /* ---------- 出席アプリ ----------
+   * 教科ごとに出席ページのURLが違うため、「今の授業」のURLを開く。
+   * 進行中 or 開始15分前以内の授業があればそれを直接開き、
+   * 無ければ今日の授業から選ばせる。授業個別のURLが未設定なら全体の既定にフォールバック。
+   */
+  const SOON_MIN = 15;
+
+  /** 今日のコマを {course, period, start, end} の配列で返す(時限順) */
+  function todaySlots() {
+    const sem = S.getActiveSemester();
+    if (!sem) return [];
+    const dayIdx = U.dayIndexToday();
+    const out = [];
+    S.coursesOf(sem.id).forEach((c) => {
+      (c.slots || []).forEach((sl) => {
+        if (sl.day !== dayIdx) return;
+        const p = (sem.periods || []).find((x) => x.no === sl.period);
+        out.push({
+          course: c,
+          period: sl.period,
+          start: p ? U.parseTime(p.start) : null,
+          end: p ? U.parseTime(p.end) : null,
+        });
+      });
+    });
+    return out.sort((a, b) => a.period - b.period);
+  }
+
+  const attUrlFor = (course) =>
+    (course.attendanceUrl || "").trim() || (S.getSettings().attendanceUrl || "").trim();
+
+  function openUrl(url) {
+    window.open(url, "_blank", "noopener");
+  }
+
   function openAttendanceApp() {
-    const url = S.getSettings().attendanceUrl;
-    if (url) {
-      window.open(url, "_blank", "noopener");
-    } else {
+    const slots = todaySlots();
+    const now = U.nowMinutes();
+
+    // 1) 進行中のコマ
+    let target = slots.find((s) => s.start != null && s.end != null && now >= s.start && now < s.end);
+    // 2) まもなく始まるコマ(15分前以内)
+    if (!target) {
+      target = slots.find((s) => s.start != null && s.start - now > 0 && s.start - now <= SOON_MIN);
+    }
+
+    if (target) {
+      const url = attUrlFor(target.course);
+      if (url) { openUrl(url); return; }
+      // URL未設定 → その授業の設定画面へ誘導
+      U.toast(`「${target.course.name}」の出席ページURLが未設定です`);
+      KD.sheet?.openCourse?.(target.course.id, "info");
+      return;
+    }
+
+    // 3) 今の授業が特定できない → 今日の授業から選ばせる
+    const withUrl = slots.filter((s) => attUrlFor(s.course));
+    if (!slots.length) {
+      const fallback = (S.getSettings().attendanceUrl || "").trim();
+      if (fallback) { openUrl(fallback); return; }
       U.toast("設定で出席アプリのURLを登録してください");
       switchView("settings");
+      return;
     }
+    if (withUrl.length === 1) { openUrl(attUrlFor(withUrl[0].course)); return; }
+
+    openAttendancePicker(slots);
+  }
+
+  function openAttendancePicker(slots) {
+    const items = slots.map((s) => {
+      const url = attUrlFor(s.course);
+      return `
+        <button class="sheet-item" data-att-course="${s.course.id}">
+          <span><span class="mono" style="color:var(--sub)">${s.period}限</span> ${U.escapeHtml(s.course.name)}</span>
+          <span class="mono" style="font-size:11px;color:var(--sub)">${url ? "開く ↗" : "URL未設定"}</span>
+        </button>`;
+    }).join("");
+
+    KD.sheet.open(`
+      <div class="sheet-head"><h2>出席ページを開く</h2></div>
+      <p class="hint" style="margin-bottom:10px">今日の授業から選んでください</p>
+      <div class="sheet-list">${items}</div>
+    `);
+
+    document.querySelectorAll("#sheet [data-att-course]").forEach((b) =>
+      b.addEventListener("click", () => {
+        const c = S.getCourse(b.dataset.attCourse);
+        if (!c) return;
+        const url = attUrlFor(c);
+        KD.sheet.close();
+        if (url) openUrl(url);
+        else {
+          U.toast(`「${c.name}」の出席ページURLが未設定です`);
+          KD.sheet.openCourse(c.id, "info");
+        }
+      })
+    );
   }
 
   /* ---------- 起動 ---------- */
