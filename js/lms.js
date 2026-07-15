@@ -356,5 +356,6 @@ KD.lms = (() => {
     test, sync, autoSync, isConfigured, matchCourseId,
     parseIcal, toAssignments, cleanTitle, classify,
     analyzeCodes, inferCodeSlots, loadCodes, getLastCodes,
+    LOOKBACK_DAYS, // 同期範囲。この期間内のLMS課題は消しても次の同期で復活する
   };
 })();

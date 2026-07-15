@@ -462,6 +462,23 @@
 }
 .asg-sec.is-overdue-sec .asg-sec-head { color: var(--danger); }
 
+/* セクション見出しの片付けボタン */
+.asg-sec-btn {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--sub);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 11px;
+  white-space: nowrap;
+}
+.asg-sec-btn:active { transform: scale(.96); }
+.asg-sec.is-overdue-sec .asg-sec-btn { color: var(--danger); border-color: var(--danger); }
+
+.asg-done-bar { display: flex; align-items: center; gap: 8px; }
+.asg-done-bar .asg-sec-btn { margin-left: auto; }
+
 /* 完了済み折りたたみ */
 .asg-done-toggle {
   font-size: 12.5px;

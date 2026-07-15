@@ -38,12 +38,29 @@
       </div>`;
   }
 
-  function sectionHtml(title, items, cls) {
+  function sectionHtml(title, items, cls, actionHtml) {
     if (!items.length) return "";
     return `<div class="asg-sec${cls ? " " + cls : ""}">
-      <h3 class="asg-sec-head">${title}<span class="mono asg-sec-n">${items.length}</span></h3>
+      <h3 class="asg-sec-head">${title}<span class="mono asg-sec-n">${items.length}</span>
+        ${actionHtml || ""}
+      </h3>
       ${items.map((a) => rowHtml(a, cls === "is-overdue-sec")).join("")}
     </div>`;
+  }
+
+  /* ---------- 片付け ----------
+   * 期限切れは「削除」ではなく「完了にする」で片付ける。
+   * LMS由来の課題を削除しても、同期範囲(既定14日)内なら次の同期で未完了として
+   * 復活してしまうため。完了マークは同期時に保持されるので赤帯に戻らない。
+   */
+  const lookbackDays = () => KD.lms?.LOOKBACK_DAYS ?? 14;
+
+  /** 削除しても次の同期で復活しないか */
+  function isSafeToDelete(a) {
+    if (!a.lmsId) return true; // 手動で追加したものはいつでも消せる
+    const t = new Date(a.due + "T23:59:59").getTime();
+    if (isNaN(t)) return true;
+    return Date.now() - t > lookbackDays() * 86400000;
   }
 
   /* ---------- 描画 ---------- */
@@ -69,16 +86,22 @@
         <p class="hint">「＋ 課題を追加」から登録するか、<br>課題ページのスクショから取り込めます。</p>
       </div>`;
     } else {
+      const overdueAction = overdue.length
+        ? `<button class="asg-sec-btn" id="asg-clear-overdue">まとめて完了にする</button>` : "";
       listHtml =
-        sectionHtml("期限切れ", overdue, "is-overdue-sec") +
+        sectionHtml("期限切れ", overdue, "is-overdue-sec", overdueAction) +
         sectionHtml("今日", todayList) +
         sectionHtml("今週", weekList) +
         sectionHtml("それ以降", laterList);
       if (done.length) {
+        const deletable = done.filter(isSafeToDelete).length;
         listHtml += `<div class="asg-sec is-done-sec">
-          <button class="asg-done-toggle" id="asg-done-toggle">
-            完了済み ${done.length}件 <span class="mono">${showDone ? "▲" : "▼"}</span>
-          </button>
+          <div class="asg-done-bar">
+            <button class="asg-done-toggle" id="asg-done-toggle">
+              完了済み ${done.length}件 <span class="mono">${showDone ? "▲" : "▼"}</span>
+            </button>
+            ${deletable ? `<button class="asg-sec-btn" id="asg-purge-done">${deletable}件を削除</button>` : ""}
+          </div>
           ${showDone ? done.map((a) => rowHtml(a, false)).join("") : ""}
         </div>`;
       }
@@ -100,6 +123,28 @@
     document.getElementById("asg-done-toggle")?.addEventListener("click", () => {
       showDone = !showDone;
       render();
+    });
+
+    // 期限切れをまとめて完了に(削除ではない。理由は isSafeToDelete のコメント参照)
+    document.getElementById("asg-clear-overdue")?.addEventListener("click", () => {
+      const list = S.listAssignments().filter((a) => !a.done && a.due < U.todayISO());
+      if (!list.length) return;
+      if (!confirm(`期限切れの${list.length}件を「完了」にします。\n(削除ではないので、完了済みから元に戻せます)`)) return;
+      list.forEach((a) => S.updateAssignment(a.id, { done: true }));
+      U.toast(`${list.length}件を完了にしました`);
+    });
+
+    // 完了済みのうち、消しても同期で復活しないものだけ削除
+    document.getElementById("asg-purge-done")?.addEventListener("click", () => {
+      const all = S.listAssignments().filter((a) => a.done);
+      const target = all.filter(isSafeToDelete);
+      const kept = all.length - target.length;
+      if (!target.length) return;
+      const msg = `完了済みの${target.length}件を削除します。この操作は取り消せません。`
+        + (kept ? `\n\n(残り${kept}件はLMSと同期中のため残します。今消しても次の同期で戻ってきてしまいます)` : "");
+      if (!confirm(msg)) return;
+      target.forEach((a) => S.deleteAssignment(a.id));
+      U.toast(`${target.length}件を削除しました`);
     });
 
     root.querySelectorAll(".asg-row").forEach((row) => {
