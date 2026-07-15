@@ -357,17 +357,33 @@ KD.settings = (() => {
       .replace(/[\s　・･/／,、.。()（）:：\-ー―_]/g, "")
       .toLowerCase();
 
-  /** テキスト → [{name, url}] */
+  /** テキスト → [{name, url}]
+   *  「名前→URL」「URL→名前」どちらの並びでも拾う。
+   *  1つ目のURLの前に文字があるかで、どちらの並びかを判定する
+   *  (混在は原理的に区別できないため、全体で1つの並びとみなす)。
+   */
   function parseAttBulk(text) {
-    const out = [];
     const re = /https?:\/\/[^\s"'<>]+/g;
-    let last = 0, m;
+    const urls = [];
+    let m;
     while ((m = re.exec(text)) !== null) {
-      const name = text.slice(last, m.index).trim();
-      out.push({ name, url: m[0] });
-      last = m.index + m[0].length;
+      urls.push({ url: m[0], start: m.index, end: m.index + m[0].length });
     }
-    return out;
+    if (!urls.length) return [];
+
+    const nameFirst = text.slice(0, urls[0].start).trim().length > 0;
+
+    return urls.map((u, i) => {
+      let name;
+      if (nameFirst) {
+        const prevEnd = i === 0 ? 0 : urls[i - 1].end;
+        name = text.slice(prevEnd, u.start).trim();
+      } else {
+        const nextStart = i === urls.length - 1 ? text.length : urls[i + 1].start;
+        name = text.slice(u.end, nextStart).trim();
+      }
+      return { name, url: u.url };
+    });
   }
 
   /** 名前 → 授業。完全一致 → 部分一致(長い方を優先) */
