@@ -250,6 +250,33 @@
 
 /* 端末間の引っ越しコード */
 .set-transfer { margin-bottom: 14px; }
+
+/* 6桁コードの表示 */
+.tf-code {
+  text-align: center;
+  font-size: clamp(38px, 12vw, 52px);
+  font-weight: 500;
+  letter-spacing: .12em;
+  color: var(--ink);
+  background: var(--card);
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 18px 10px;
+  margin: 4px 0 8px;
+  user-select: all;
+}
+:root[data-theme="dark"] .tf-code { color: var(--accent); border-color: #2E3138; }
+.tf-timer { text-align: center; font-size: 11.5px; color: var(--sub); margin-bottom: 10px; }
+
+/* 6桁の入力欄 */
+.tf-input {
+  text-align: center;
+  font-size: 30px;
+  letter-spacing: .18em;
+  padding: 12px;
+  margin-bottom: 4px;
+}
+.tf-input::placeholder { letter-spacing: .18em; color: var(--faint); }
 #tf-out, #tf-in {
   font-family: var(--font-mono);
   font-size: 10.5px;

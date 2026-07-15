@@ -751,89 +751,195 @@ KD.settings = (() => {
     throw new Error("コードの形式が違います");
   }
 
-  function openTransferSheet(mode) {
-    if (mode === "out") {
-      KD.sheet.open(`
-        <div class="sheet-head"><h2>この端末のデータを渡す</h2></div>
-        <p class="hint" style="margin-bottom:8px">
-          下のコードをコピーして、LINEやメモで<strong>もう一方の端末に送って</strong>ください。
-          受け取った側で「コードで受け取る」に貼り付けます。
-        </p>
-        <div class="field"><textarea id="tf-out" rows="5" readonly>生成中…</textarea></div>
-        <p class="hint" id="tf-size"></p>
-        <div class="sheet-actions">
-          <button class="btn btn-primary" id="tf-copy">コードをコピー</button>
-        </div>
-      `);
-      makeCode().then((code) => {
-        const ta = document.getElementById("tf-out");
-        if (!ta) return;
-        ta.value = code;
-        const sem = S.listSemesters().length;
-        const courses = S.listSemesters().reduce((n, s) => n + S.coursesOf(s.id).length, 0);
-        document.getElementById("tf-size").textContent =
-          `学期${sem}件・授業${courses}件・課題${S.listAssignments().length}件 / ${(code.length / 1024).toFixed(1)}KB`;
-      }).catch((e) => {
-        const ta = document.getElementById("tf-out");
-        if (ta) ta.value = "生成に失敗しました: " + e.message;
-      });
+  const dataSummary = () => {
+    const sems = S.listSemesters().length;
+    const courses = S.listSemesters().reduce((n, s) => n + S.coursesOf(s.id).length, 0);
+    return `学期${sems}件・授業${courses}件・課題${S.listAssignments().length}件`;
+  };
 
-      document.getElementById("tf-copy").addEventListener("click", async () => {
-        const ta = document.getElementById("tf-out");
-        try {
-          await navigator.clipboard.writeText(ta.value);
-          U.toast("コードをコピーしました");
-        } catch (e) {
-          ta.select(); // クリップボードAPIが使えない時は手動選択に任せる
-          U.toast("長押しでコピーしてください");
-        }
-      });
+  /** 引っ越しコードを適用する(6桁・長いコード共通の最終処理) */
+  async function applyTransferJson(json) {
+    let peek;
+    try {
+      peek = JSON.parse(json);
+      if (!peek || !Array.isArray(peek.semesters)) throw new Error("形式が不正です");
+    } catch (e) {
+      U.toast("コードの中身が壊れています");
+      return false;
+    }
+    const msg = `学期${peek.semesters.length}件・授業${(peek.courses || []).length}件・`
+      + `課題${(peek.assignments || []).length}件 を読み込みます。\n\n`
+      + `この端末の今のデータは置き換わります。よろしいですか?`;
+    if (!window.confirm(msg)) return false;
+    try {
+      S.importJSON(json);
+      U.toast("データを読み込みました");
+      KD.sheet.close();
+      KD.applyTheme?.();
+      render();
+      return true;
+    } catch (e) {
+      U.toast("読み込みに失敗しました: " + e.message);
+      return false;
+    }
+  }
+
+  function openTransferSheet(mode) {
+    return mode === "out" ? openTransferOut() : openTransferIn();
+  }
+
+  /* ---- 渡す側 ---- */
+  async function openTransferOut() {
+    KD.sheet.open(`
+      <div class="sheet-head"><h2>この端末のデータを渡す</h2></div>
+      <div id="tf-body"><p class="hint">準備中…</p></div>
+    `);
+
+    let payload;
+    try {
+      payload = await makeCode();
+    } catch (e) {
+      document.getElementById("tf-body").innerHTML = `<p class="hint">生成に失敗しました: ${U.escapeHtml(e.message)}</p>`;
       return;
     }
 
+    // まず6桁コードを試す。保存先が未設定(501)や失敗なら長いコードに切り替える。
+    let short = null;
+    try {
+      const r = await fetch("./api/transfer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "put", payload }),
+      });
+      if (r.ok) short = await r.json();
+    } catch (e) { /* オフライン等 → 長いコードへ */ }
+
+    if (!document.getElementById("tf-body")) return; // シートが閉じられた
+    short ? renderShortCode(short, payload) : renderLongCode(payload);
+  }
+
+  function renderShortCode(short, payload) {
+    const el = document.getElementById("tf-body");
+    el.innerHTML = `
+      <p class="hint" style="margin-bottom:10px">
+        もう一方の端末で <strong>設定 → データ → コードで受け取る</strong> を開き、
+        この番号を入力してください。
+      </p>
+      <div class="tf-code mono">${short.code.slice(0, 3)} ${short.code.slice(3)}</div>
+      <p class="tf-timer mono" id="tf-timer"></p>
+      <p class="hint">${U.escapeHtml(dataSummary())} / 1回だけ使えます</p>
+      <div class="sheet-actions">
+        <button class="btn btn-ghost btn-sm" id="tf-tolong">うまくいかない場合: 長いコードを使う</button>
+      </div>`;
+
+    // 残り時間のカウントダウン(シートが閉じたら止める)
+    let left = short.ttl;
+    const tick = () => {
+      const t = document.getElementById("tf-timer");
+      if (!t) { clearInterval(iv); return; }
+      if (left <= 0) {
+        t.textContent = "期限切れです。開き直してください";
+        clearInterval(iv);
+        return;
+      }
+      t.textContent = `有効期限 残り ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+      left--;
+    };
+    const iv = setInterval(tick, 1000);
+    tick();
+
+    document.getElementById("tf-tolong").addEventListener("click", () => {
+      clearInterval(iv);
+      renderLongCode(payload);
+    });
+  }
+
+  function renderLongCode(payload) {
+    const el = document.getElementById("tf-body");
+    el.innerHTML = `
+      <p class="hint" style="margin-bottom:8px">
+        下のコードをコピーして、LINEやメモで<strong>もう一方の端末に送って</strong>ください。
+        受け取った側の「コードで受け取る」に貼り付けます。
+      </p>
+      <div class="field"><textarea id="tf-out" rows="5" readonly>${U.escapeHtml(payload)}</textarea></div>
+      <p class="hint">${U.escapeHtml(dataSummary())} / ${(payload.length / 1024).toFixed(1)}KB</p>
+      <div class="sheet-actions">
+        <button class="btn btn-primary" id="tf-copy">コードをコピー</button>
+      </div>`;
+    document.getElementById("tf-copy").addEventListener("click", async () => {
+      const ta = document.getElementById("tf-out");
+      try {
+        await navigator.clipboard.writeText(ta.value);
+        U.toast("コードをコピーしました");
+      } catch (e) {
+        ta.select(); // クリップボードAPIが使えない環境では手動選択に任せる
+        U.toast("長押しでコピーしてください");
+      }
+    });
+  }
+
+  /* ---- 受け取る側 ---- */
+  function openTransferIn() {
     KD.sheet.open(`
       <div class="sheet-head"><h2>コードで受け取る</h2></div>
-      <p class="hint" style="margin-bottom:8px">
-        もう一方の端末で出したコードを貼り付けてください。
+      <p class="hint" style="margin-bottom:10px">
+        もう一方の端末に出ている<strong>6桁の番号</strong>を入力してください。
         <strong>この端末のデータは置き換わります。</strong>
       </p>
-      <div class="field"><textarea id="tf-in" rows="5" placeholder="KMDR1G:..."></textarea></div>
+      <input class="tf-input mono" id="tf-six" type="text" inputmode="numeric" pattern="[0-9]*"
+             maxlength="7" placeholder="000000" autocomplete="off">
       <div class="sheet-actions">
-        <button class="btn btn-primary" id="tf-apply">読み込む</button>
+        <button class="btn btn-primary" id="tf-six-go">読み込む</button>
       </div>
+      <details class="set-lms-help">
+        <summary>長いコードを貼り付ける</summary>
+        <div class="field" style="margin-top:8px">
+          <textarea id="tf-in" rows="4" placeholder="KMDR1G:..."></textarea>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="tf-apply">これを読み込む</button>
+      </details>
     `);
 
-    document.getElementById("tf-apply").addEventListener("click", async () => {
-      const code = document.getElementById("tf-in").value;
-      if (!code.trim()) { U.toast("コードを貼り付けてください"); return; }
-      let json;
+    const six = document.getElementById("tf-six");
+    six.addEventListener("input", () => {
+      const v = six.value.replace(/\D/g, "").slice(0, 6);
+      six.value = v.length > 3 ? `${v.slice(0, 3)} ${v.slice(3)}` : v;
+    });
+
+    document.getElementById("tf-six-go").addEventListener("click", async (e) => {
+      const code = six.value.replace(/\D/g, "");
+      if (code.length !== 6) { U.toast("6桁の番号を入力してください"); return; }
+      e.target.disabled = true;
       try {
-        json = await readCode(code);
+        const r = await fetch("./api/transfer", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "get", code }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          U.toast(d.error === "NOT_CONFIGURED"
+            ? "6桁コードは未設定です。長いコードを使ってください"
+            : (d.error || "読み込めませんでした"));
+          e.target.disabled = false;
+          return;
+        }
+        const json = await readCode(d.payload);
+        const ok = await applyTransferJson(json);
+        if (!ok) e.target.disabled = false;
+      } catch (err) {
+        U.toast("読み込めませんでした: " + err.message);
+        e.target.disabled = false;
+      }
+    });
+
+    document.getElementById("tf-apply").addEventListener("click", async () => {
+      const raw = document.getElementById("tf-in").value;
+      if (!raw.trim()) { U.toast("コードを貼り付けてください"); return; }
+      try {
+        await applyTransferJson(await readCode(raw));
       } catch (e) {
         U.toast("読み込めませんでした: " + e.message);
-        return;
-      }
-      // 中身の確認 → 件数を見せてから置き換える
-      let peek;
-      try {
-        peek = JSON.parse(json);
-        if (!peek || !Array.isArray(peek.semesters)) throw new Error("形式が不正です");
-      } catch (e) {
-        U.toast("コードの中身が壊れています");
-        return;
-      }
-      const courses = (peek.courses || []).length;
-      const msg = `学期${peek.semesters.length}件・授業${courses}件・課題${(peek.assignments || []).length}件 を読み込みます。\n\n`
-        + `この端末の今のデータは置き換わります。よろしいですか?`;
-      if (!window.confirm(msg)) return;
-      try {
-        S.importJSON(json);
-        U.toast("データを読み込みました");
-        KD.sheet.close();
-        KD.applyTheme?.();
-        render();
-      } catch (e) {
-        U.toast("読み込みに失敗しました: " + e.message);
       }
     });
   }
