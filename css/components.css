@@ -392,7 +392,15 @@
 .asg-title { font-weight: 800; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
 .asg-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .asg-due { font-size: 11px; color: var(--sub); }
-.asg-row.is-overdue .asg-due { color: var(--danger); font-weight: 700; }
+/* 締切が迫った課題(完了済みには付かない)
+   期限切れ・明日 → 締切を赤字 / 今日 → 加えて枠も赤 */
+.asg-row.is-overdue .asg-due,
+.asg-row.is-due-tomorrow .asg-due,
+.asg-row.is-due-today .asg-due { color: var(--danger); font-weight: 700; }
+.asg-row.is-due-today {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
 .asg-row.is-done { opacity: .55; }
 .asg-row.is-done .asg-title { text-decoration: line-through; }
 

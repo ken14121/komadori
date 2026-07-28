@@ -14,6 +14,23 @@
     return U.todayISO(d);
   }
 
+  function tomorrowISO() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return U.todayISO(d);
+  }
+
+  /** 締切の切迫度で行に付けるクラス。完了済みは何も付けない。
+   *  期限切れ・明日 = 締切を赤字 / 今日 = 加えて枠も赤 */
+  function urgencyClass(a) {
+    if (a.done) return "";
+    const today = U.todayISO();
+    if (a.due < today) return " is-overdue";
+    if (a.due === today) return " is-due-today";
+    if (a.due === tomorrowISO()) return " is-due-tomorrow";
+    return "";
+  }
+
   function dueLabel(a) {
     return `${U.fmtDateDow(a.due)}${a.dueTime ? " " + esc(a.dueTime) : ""}`;
   }
@@ -21,7 +38,7 @@
   const dueKey = (a) => (a.due || "") + " " + (a.dueTime || "24:00");
 
   /* ---------- 行HTML ---------- */
-  function rowHtml(a, overdue) {
+  function rowHtml(a) {
     const c = a.courseId ? S.getCourse(a.courseId) : null;
     const cname = c ? c.name : (a.courseName || "");
     const chip = cname
@@ -29,7 +46,7 @@
         `${c ? '<span class="asg-dot"></span>' : ""}${esc(cname)}</span>`
       : "";
     return `
-      <div class="asg-row${a.done ? " is-done" : ""}${overdue ? " is-overdue" : ""}" data-asg="${a.id}">
+      <div class="asg-row${a.done ? " is-done" : ""}${urgencyClass(a)}" data-asg="${a.id}">
         <input type="checkbox" class="asg-check" ${a.done ? "checked" : ""} aria-label="完了">
         <div class="asg-main">
           <span class="asg-title">${esc(a.title)}</span>
@@ -44,7 +61,7 @@
       <h3 class="asg-sec-head">${title}<span class="mono asg-sec-n">${items.length}</span>
         ${actionHtml || ""}
       </h3>
-      ${items.map((a) => rowHtml(a, cls === "is-overdue-sec")).join("")}
+      ${items.map((a) => rowHtml(a)).join("")}
     </div>`;
   }
 
@@ -102,7 +119,7 @@
             </button>
             ${deletable ? `<button class="asg-sec-btn" id="asg-purge-done">${deletable}件を削除</button>` : ""}
           </div>
-          ${showDone ? done.map((a) => rowHtml(a, false)).join("") : ""}
+          ${showDone ? done.map((a) => rowHtml(a)).join("") : ""}
         </div>`;
       }
       if (!open.length && !done.length) listHtml = "";
