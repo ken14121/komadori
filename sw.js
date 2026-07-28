@@ -28,7 +28,11 @@ const PRECACHE = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(VERSION)
-      .then((cache) => Promise.allSettled(PRECACHE.map((url) => cache.add(url))))
+      // cache:"reload" でブラウザのHTTPキャッシュを迂回する。
+      // これが無いと、更新直後の初回訪問で古い版を掴み、それをSWキャッシュに焼き付けてしまう。
+      .then((cache) => Promise.allSettled(
+        PRECACHE.map((url) => cache.add(new Request(url, { cache: "reload" })))
+      ))
       .then(() => self.skipWaiting())
   );
 });
@@ -74,7 +78,9 @@ self.addEventListener("fetch", (event) => {
   // ファイルは全部で数十KBなので、毎回取りに行っても体感差はない。
   if (isSameOrigin) {
     event.respondWith(
-      fetch(req)
+      // cache:"no-cache" で必ずサーバーに問い合わせる(変更が無ければ304で軽い)。
+      // 付けないとHTTPキャッシュ由来の古い版がそのまま返ることがある。
+      fetch(req, { cache: "no-cache" })
         .then((res) => {
           if (res && res.ok) {
             const copy = res.clone();
