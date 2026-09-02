@@ -185,14 +185,20 @@ KD.importer = (() => {
           </div>
         ` : ""}
         <label class="imp-btn-photo" for="imp-file-input">
-          <span class="imp-photo-icon" aria-hidden="true">📷</span>
-          <span>撮影 / 画像を選ぶ</span>
+          <span class="imp-photo-icon" aria-hidden="true">🖼️</span>
+          <span>写真から選ぶ</span>
         </label>
-        <input type="file" accept="image/*" capture="environment" id="imp-file-input" hidden>
+        <input type="file" accept="image/*" id="imp-file-input" hidden>
+        <label class="imp-btn-photo imp-btn-photo-sub" for="imp-camera-input">
+          <span class="imp-photo-icon" aria-hidden="true">📷</span>
+          <span>カメラで撮影</span>
+        </label>
+        <input type="file" accept="image/*" capture="environment" id="imp-camera-input" hidden>
         <p class="hint imp-hint">ポータルのスクショ・紙の時間割の写真・PDFのスクショに対応しています。</p>
       </div>
     `);
     document.getElementById("imp-file-input")?.addEventListener("change", onFileSelected);
+    document.getElementById("imp-camera-input")?.addEventListener("change", onFileSelected);
     document.getElementById("imp-goto-settings")?.addEventListener("click", () => {
       close();
       KD.switchView("settings");

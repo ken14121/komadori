@@ -2,7 +2,7 @@
  * 方針: オンラインなら常に最新を配る(network-first)。キャッシュは圏外用の保険。
  * 更新のたびに VERSION を上げると、古いキャッシュが activate で破棄される。
  */
-const VERSION = "komadori-v2";
+const VERSION = "komadori-v3";
 const FONT_CACHE = VERSION + "-fonts";
 
 const PRECACHE = [

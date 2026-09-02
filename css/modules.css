@@ -78,6 +78,16 @@
 .imp-btn-photo:active { transform: scale(.97); }
 .imp-photo-icon { font-size: 19px; }
 
+/* サブ(カメラ撮影)は控えめな見た目にする */
+.imp-btn-photo-sub {
+  background: var(--card);
+  color: var(--ink);
+  border: 1.5px solid var(--line);
+  box-shadow: none;
+  font-size: 15px;
+  padding: 13px 24px;
+}
+
 .imp-hint { text-align: center; margin-top: 4px; }
 
 .imp-warn-card {
